@@ -5,8 +5,10 @@ import (
 )
 
 type App struct {
-	Api Api `yaml:"api"`
-	Log Log `yaml:"log"`
+	Api  Api  `yaml:"api"`
+	Data Data `yaml:"data"`
+	Repo Repo `yaml:"repo"`
+	Log  Log  `yaml:"log"`
 }
 
 type Api struct {
@@ -23,6 +25,22 @@ type ApiHttp struct {
 	Port            string        `yaml:"port"`
 	ReadTimeout     time.Duration `yaml:"read_timeout"`
 	WriteTimeout    time.Duration `yaml:"write_timeout"`
+}
+
+type Data struct {
+	Port      int `yaml:"port"`
+}
+
+type Repo struct {
+	Hash *Hash `yaml:"hash"`
+}
+
+type Hash struct {
+	IndexPath      string `yaml:"ixpath"`
+	TimeseriesPath string `yaml:"tspath"`
+	Partitions     int    `yaml:"partitions"`
+	Replicas       int    `yaml:"replicas"`
+	Surrogates     int    `yaml:"surrogates"`
 }
 
 type Log struct {

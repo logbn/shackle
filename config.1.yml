@@ -24,7 +24,11 @@ raft:
 data:
   port: 4708
   pepper: pepper
-  shards: 4096
-  vnodes: 4
-  replicas: 3
-  surrogates: 1
+
+repo:
+  hash:
+    ixpath: /data/node1
+    tspath: /data/node1
+    partitions: 64
+    replicas: 3
+    surrogates: 1

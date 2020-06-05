@@ -3,6 +3,7 @@ package entity
 import (
 	"crypto/sha1"
 	"sync"
+	"strconv"
 
 	"github.com/valyala/fastjson"
 )
@@ -33,5 +34,16 @@ func LockBatchFromJson(body []byte) (ent Batch, err error) {
 		sha := sha1.Sum(sv.GetStringBytes())
 		ent[i] = sha[:16]
 	}
+	return
+}
+
+func BatchResponseToJson(res []int) (out []byte, err error) {
+	out = make([]byte, len(res)*2+1)
+	out[0] = byte('[')
+	for i, c := range res {
+		out[2*i+1] = []byte(strconv.Itoa(c))[0]
+		out[2*i+2] = byte(',')
+	}
+	out[len(res)*2] = byte(']')
 	return
 }

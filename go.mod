@@ -3,6 +3,8 @@ module highvolume.io/shackle
 go 1.13
 
 require (
+	github.com/benbjohnson/clock v1.0.2
+	github.com/bmatsuo/lmdb-go v1.8.0
 	github.com/fasthttp/router v1.1.6
 	github.com/onrik/logrus v0.5.1
 	github.com/sirupsen/logrus v1.6.0

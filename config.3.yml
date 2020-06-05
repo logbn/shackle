@@ -25,7 +25,11 @@ raft:
 data:
   port: 4728
   pepper: pepper
-  shards: 4096
-  vnodes: 4
-  replicas: 3
-  surrogates: 1
+
+repo:
+  hash:
+    ixpath: /data/node3
+    tspath: /data/node3
+    partitions: 64
+    replicas: 3
+    surrogates: 1

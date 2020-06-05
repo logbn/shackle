@@ -6,6 +6,7 @@ import (
 	"highvolume.io/shackle/internal/api/http"
 	"highvolume.io/shackle/internal/config"
 	"highvolume.io/shackle/internal/log"
+	"highvolume.io/shackle/internal/repo"
 )
 
 type Api struct {
@@ -15,8 +16,14 @@ type Api struct {
 }
 
 func NewApi(cfg config.App, log log.Logger) *Api {
+	// repo.Hash
+	repoHash, err := repo.NewHash(cfg.Repo.Hash)
+	if repoHash == nil || err != nil {
+		log.Fatal("Hash repo misconfigured - ", err)
+	}
 	router := http.NewRouter(
 		log,
+		repoHash,
 	)
 	server := &fasthttp.Server{
 		Logger:                log,
