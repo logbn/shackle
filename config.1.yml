@@ -1,0 +1,30 @@
+env: dev
+
+log:
+  level: debug
+
+api:
+  enabled: true
+  http:
+    port: 8080
+    keepalive: true
+    keepalive_period: 60s
+    max_conns_per_ip: 10000
+    read_timeout: 15s
+    write_timeout: 15s
+    idle_timeout: 15s
+  grpc:
+    port: 9090
+
+raft:
+  clusterid: test
+  nodeid: 1
+  port: 4709
+
+data:
+  port: 4708
+  pepper: pepper
+  shards: 4096
+  vnodes: 4
+  replicas: 3
+  surrogates: 1

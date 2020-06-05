@@ -1,3 +1,3 @@
-# Thunder
+# Shackle
 
-A distributed hash set with two phase commit built on LMDB and Raft.
+A horizontally scalable hash registry with expiration and two phase commit built on LMDB and Raft.
