@@ -4,15 +4,15 @@ import (
 	"github.com/fasthttp/router"
 
 	"highvolume.io/shackle/internal/log"
-	"highvolume.io/shackle/internal/repo"
+	"highvolume.io/shackle/internal/service"
 )
 
 // NewRouter returns a router
 func NewRouter(
 	log log.Logger,
-	repoHash repo.Hash,
+	svcPersistence service.Persistence,
 ) *router.Router {
-	lock := Lock{repoHash}
+	lock := Lock{svcPersistence}
 
 	r := router.New()
 	r.GET("/", Index)

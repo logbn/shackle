@@ -32,3 +32,7 @@ repo:
     partitions: 64
     replicas: 3
     surrogates: 1
+    length: 16
+    keysize: 8
+    expiration: 730h
+    cachesize: 100000

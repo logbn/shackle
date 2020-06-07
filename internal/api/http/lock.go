@@ -6,12 +6,12 @@ import (
 	"github.com/valyala/fasthttp"
 
 	"highvolume.io/shackle/internal/entity"
-	"highvolume.io/shackle/internal/repo"
+	"highvolume.io/shackle/internal/service"
 )
 
 // Lock accepts lock requests via api
 type Lock struct {
-	repoHash repo.Hash
+	svcPersistence service.Persistence
 }
 
 func (c *Lock) ServeFastHTTP(ctx *fasthttp.RequestCtx) {
@@ -24,7 +24,7 @@ func (c *Lock) ServeFastHTTP(ctx *fasthttp.RequestCtx) {
 		fmt.Fprintf(ctx, err.Error())
 		return
 	}
-	res, err := c.repoHash.Lock(batch)
+	res, err := c.svcPersistence.Lock(batch)
 	if err != nil {
 		ctx.Response.SetStatusCode(500)
 		fmt.Fprintf(ctx, err.Error())

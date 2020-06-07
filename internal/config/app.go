@@ -28,7 +28,7 @@ type ApiHttp struct {
 }
 
 type Data struct {
-	Port      int `yaml:"port"`
+	Port int `yaml:"port"`
 }
 
 type Repo struct {
@@ -36,11 +36,15 @@ type Repo struct {
 }
 
 type Hash struct {
-	IndexPath      string `yaml:"ixpath"`
-	TimeseriesPath string `yaml:"tspath"`
-	Partitions     int    `yaml:"partitions"`
-	Replicas       int    `yaml:"replicas"`
-	Surrogates     int    `yaml:"surrogates"`
+	IndexPath      string        `yaml:"ixpath"`
+	TimeseriesPath string        `yaml:"tspath"`
+	Partitions     int           `yaml:"partitions"`
+	Replicas       int           `yaml:"replicas"`
+	Surrogates     int           `yaml:"surrogates"`
+	Length         int           `yaml:"length"`
+	KeySize        int           `yaml:"keysize"`
+	Expiration     time.Duration `yaml:"expiration"`
+	CacheSize      int           `yaml:"cachesize"`
 }
 
 type Log struct {
