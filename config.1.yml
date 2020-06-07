@@ -34,5 +34,6 @@ repo:
     surrogates: 1
     length: 16
     keysize: 8
-    expiration: 730h
+    key_expiration: 730h
+    lock_expiration: 30s
     cachesize: 100000

@@ -43,7 +43,8 @@ type Hash struct {
 	Surrogates     int           `yaml:"surrogates"`
 	Length         int           `yaml:"length"`
 	KeySize        int           `yaml:"keysize"`
-	Expiration     time.Duration `yaml:"expiration"`
+	KeyExpiration  time.Duration `yaml:"key_expiration"`
+	LockExpiration time.Duration `yaml:"lock_expiration"`
 	CacheSize      int           `yaml:"cachesize"`
 }
 

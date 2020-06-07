@@ -23,14 +23,18 @@ const (
 	LOCK_BUSY       int8 = 2 // Retry after timeout - Lock not granted
 	LOCK_ABANDONNED int8 = 3 // State unknown       - Lock granted
 	LOCK_ERROR      int8 = 4 // Pause processing    - Lock not granted
+
+	ROLLBACK_SUCCESS    int8 = 0 // Proceed             - Lock removed
+	ROLLBACK_UNEXPECTED int8 = 1 // State unknown       - Lock missing
+	ROLLBACK_ERROR      int8 = 2 // Pause processing    - Lock not granted
 )
 
 func LockBatchFromRequest(body []byte) (ent Batch, err error) {
-	ent, err = LockBatchFromJson(body)
+	ent, err = BatchFromJson(body)
 	return
 }
 
-func LockBatchFromJson(body []byte) (ent Batch, err error) {
+func BatchFromJson(body []byte) (ent Batch, err error) {
 	var p = batchParserPool.Get().(*fastjson.Parser)
 	defer batchParserPool.Put(p)
 	v, err := p.ParseBytes(body)

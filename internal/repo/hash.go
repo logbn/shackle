@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -17,7 +18,8 @@ import (
 )
 
 type Hash interface {
-	Lock(hashes entity.Batch) (res []int8, err error)
+	Lock(batch entity.Batch) (res []int8, err error)
+	Rollback(batch entity.Batch) (res []int8, err error)
 	Close()
 }
 
@@ -26,11 +28,12 @@ type hash struct {
 	keypfx   int
 	keylen   int
 	delRatio float64
-	expTime  time.Duration
+	keyExp   time.Duration
+	lockExp  time.Duration
 	ixenv    *lmdb.Env
-	ixdb     lmdb.DBI
 	tsenv    *lmdb.Env
-	tsdb     lmdb.DBI
+	ixdbi    lmdb.DBI
+	tsdbi    lmdb.DBI
 	mutex    sync.Mutex
 	cache    lru.LRUCache
 }
@@ -41,19 +44,18 @@ func NewHash(cfg *config.Hash, partition int) (r *hash, err error) {
 	var (
 		keylen     = cfg.Length
 		keypfx     = cfg.KeySize
-		expTime    = cfg.Expiration
 		partitions = cfg.Partitions
 		delRatio   = 1.25
 
 		ixenv *lmdb.Env
 		tsenv *lmdb.Env
-		ixdb  lmdb.DBI
-		tsdb  lmdb.DBI
+		ixdbi  lmdb.DBI
+		tsdbi  lmdb.DBI
 
 		ixenvopt = lmdb.NoReadahead | lmdb.NoMemInit | lmdb.NoSync | lmdb.NoMetaSync
 		tsenvopt = lmdb.NoReadahead | lmdb.NoMemInit
-		ixdbopt  = lmdb.DupSort | lmdb.DupFixed | lmdb.Create
-		tsdbopt  = lmdb.DupSort | lmdb.DupFixed | lmdb.Create
+		ixdbiopt  = lmdb.DupSort | lmdb.DupFixed | lmdb.Create
+		tsdbiopt  = lmdb.DupSort | lmdb.DupFixed | lmdb.Create
 	)
 	if _, err = os.Stat(cfg.IndexPath); os.IsNotExist(err) {
 		return
@@ -61,38 +63,33 @@ func NewHash(cfg *config.Hash, partition int) (r *hash, err error) {
 	if _, err = os.Stat(cfg.TimeseriesPath); os.IsNotExist(err) {
 		return
 	}
-
 	b := byte(partition % partitions)
 	h = hex.EncodeToString([]byte{b})
-	var path = fmt.Sprintf("%s/%s/%s.ix.lmdb", cfg.IndexPath, string(h[0]), h)
-	os.MkdirAll(path, 0777)
-	ixenv, err = lmdb.NewEnv()
-	ixenv.SetMaxDBs(1)
-	ixenv.SetMapSize(int64(1 << 37))
-	ixenv.Open(path, uint(ixenvopt), 0777)
-	err = ixenv.Update(func(txn *lmdb.Txn) error {
-		ixdb, err = txn.OpenDBI("index", uint(ixdbopt))
+	var mkdb = func(path string, envopt, dbopt int) (env *lmdb.Env, db lmdb.DBI, err error) {
+		os.MkdirAll(path, 0777)
+		env, err = lmdb.NewEnv()
+		env.SetMaxDBs(1)
+		env.SetMapSize(int64(1 << 37))
+		env.Open(path, uint(envopt), 0777)
+		err = env.Update(func(txn *lmdb.Txn) error {
+			db, err = txn.OpenDBI("index", uint(dbopt))
+			if err != nil {
+				return err
+			}
+			return nil
+		})
 		if err != nil {
-			return err
+			return
 		}
-		return nil
-	})
+		return
+	}
+	ixpath := fmt.Sprintf("%s/%s/%s.ix.lmdb", cfg.IndexPath, string(h[0]), h)
+	ixenv, ixdbi, err = mkdb(ixpath, ixenvopt, ixdbiopt)
 	if err != nil {
 		return
 	}
-	path = fmt.Sprintf("%s/%s/%s.ts.lmdb", cfg.TimeseriesPath, string(h[0]), h)
-	os.MkdirAll(path, 0777)
-	tsenv, err = lmdb.NewEnv()
-	tsenv.SetMaxDBs(1)
-	tsenv.SetMapSize(int64(1 << 37))
-	tsenv.Open(path, uint(tsenvopt), 0777)
-	err = tsenv.Update(func(txn *lmdb.Txn) error {
-		tsdb, err = txn.OpenDBI("history", uint(tsdbopt))
-		if err != nil {
-			return err
-		}
-		return nil
-	})
+	tspath := fmt.Sprintf("%s/%s/%s.ts.lmdb", cfg.TimeseriesPath, string(h[0]), h)
+	tsenv, tsdbi, err = mkdb(tspath, tsenvopt, tsdbiopt)
 	if err != nil {
 		return
 	}
@@ -101,28 +98,42 @@ func NewHash(cfg *config.Hash, partition int) (r *hash, err error) {
 		return
 	}
 
-	return &hash{clock.New(), keylen, keypfx, delRatio, expTime, ixenv, ixdb, tsenv, tsdb, sync.Mutex{}, cache}, nil
+	return &hash{
+		clock.New(),
+		keylen,
+		keypfx,
+		delRatio,
+		cfg.KeyExpiration,
+		cfg.LockExpiration,
+		ixenv,
+		tsenv,
+		ixdbi,
+		tsdbi,
+		sync.Mutex{},
+		cache,
+	}, nil
 }
 
 // Lock determines whether each hash has been seen and locks for processing
-func (c hash) Lock(batch entity.Batch) (res []int8, err error) {
+func (c *hash) Lock(batch entity.Batch) (res []int8, err error) {
 	if len(batch) < 1 {
 		return
 	}
+	var keys []byte
+	res = make([]int8, len(batch))
+
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	var t = c.clock.Now()
-	var ts = make([]byte, 8)
-	binary.BigEndian.PutUint32(ts, uint32(t.Unix()))
-	var expts = make([]byte, 8)
-	binary.BigEndian.PutUint32(expts, uint32(t.Add(-1*c.expTime).Unix()))
-	var keys []byte
-	var tags = []string{string(ts)}
-	res = make([]int8, len(batch))
+
+	var tsi = c.clock.Now().UnixNano()
+	var tss = strconv.Itoa(int(tsi))
+	var ts = make([]byte, 16)
+	binary.BigEndian.PutUint64(ts, uint64(tsi))
+
 	err = c.tsenv.Update(func(tstxn *lmdb.Txn) error {
 		err = c.ixenv.View(func(ixtxn *lmdb.Txn) error {
 			ixtxn.RawRead = true
-			cur, err := ixtxn.OpenCursor(c.ixdb)
+			cur, err := ixtxn.OpenCursor(c.ixdbi)
 			if err != nil {
 				return err
 			}
@@ -131,6 +142,11 @@ func (c hash) Lock(batch entity.Batch) (res []int8, err error) {
 					res[i] = entity.LOCK_BUSY
 				}
 			}
+			hcur, err := tstxn.OpenCursor(c.tsdbi)
+			if err != nil {
+				return err
+			}
+			defer hcur.Close()
 			for i, item := range batch {
 				if res[i] != 0 {
 					continue
@@ -138,25 +154,16 @@ func (c hash) Lock(batch entity.Batch) (res []int8, err error) {
 				_, _, err = cur.Get(item.Hash[:c.keypfx], item.Hash[c.keypfx:], 0)
 				if err == nil {
 					res[i] = entity.LOCK_EXISTS
-					keys = append(keys, item.Hash...)
-					c.cache.Add(string(item.Hash), tags)
 				} else if !lmdb.IsNotFound(err) {
 					return err
+				} else {
+					keys = append(keys, item.Hash...)
+					c.cache.Add(string(item.Hash), tss, tss)
+					err = hcur.Put(ts, item.Hash, 0)
 				}
 			}
 			if len(keys) == 0 {
 				return nil
-			}
-			hcur, err := tstxn.OpenCursor(c.tsdb)
-			if err != nil {
-				return err
-			}
-			defer hcur.Close()
-			if len(keys) > 0 {
-				err = hcur.PutMulti(ts, keys, c.keylen, 0)
-				if err != nil {
-					return err
-				}
 			}
 			return nil
 		})
@@ -165,15 +172,56 @@ func (c hash) Lock(batch entity.Batch) (res []int8, err error) {
 		}
 		return nil
 	})
-	if err == nil {
-		c.cache.Invalidate(tags)
+	if err != nil {
+		c.cache.Invalidate([]string{tss})
 	}
 
 	return
 }
 
+// Rollback removes locks
+func (c *hash) Rollback(batch entity.Batch) (res []int8, err error) {
+	var removed = map[string]string{}
+	res = make([]int8, len(batch))
+	err = c.tsenv.Update(func(tstxn *lmdb.Txn) error {
+		for i, item := range batch {
+			hs := string(item.Hash)
+			v, ok := c.cache.Get(hs)
+			if ok {
+				tsi, err := strconv.Atoi(v.(string))
+				if err != nil {
+					return err
+				}
+				var ts = make([]byte, 16)
+				binary.BigEndian.PutUint64(ts, uint64(tsi))
+				err = tstxn.Del(c.tsdbi, ts, item.Hash)
+				if err == nil {
+					removed[hs] = v.(string)
+				} else if lmdb.IsNotFound(err) {
+					res[i] = entity.ROLLBACK_UNEXPECTED
+				} else {
+					res[i] = entity.ROLLBACK_ERROR
+					return err
+				}
+			} else {
+				res[i] = entity.ROLLBACK_UNEXPECTED
+			}
+		}
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		for k, tss := range removed {
+			c.cache.Add(string(k), tss, tss)
+		}
+	}
+	return
+}
+
 // Close the database
-func (c hash) Close() {
+func (c *hash) Close() {
 	c.ixenv.Close()
 	c.tsenv.Close()
 }
