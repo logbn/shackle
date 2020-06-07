@@ -14,6 +14,7 @@ import (
 type Persistence interface {
 	Lock(batch entity.Batch) (res []int8, err error)
 	Rollback(batch entity.Batch) (res []int8, err error)
+	Commit(batch entity.Batch) (res []int8, err error)
 	Close()
 }
 
@@ -99,6 +100,43 @@ func (c persistence) Rollback(batch entity.Batch) (res []int8, err error) {
 				c.log.Debugf(err.Error())
 				for _, item := range batch {
 					res[item.N] = entity.ROLLBACK_ERROR
+				}
+			} else {
+				for i, item := range batch {
+					res[item.N] = r1[i]
+				}
+			}
+			mutex.Unlock()
+			wg.Done()
+		}(k, batch)
+	}
+	wg.Wait()
+
+	return
+}
+
+// Commit commits locked hashes to the index
+func (c persistence) Commit(batch entity.Batch) (res []int8, err error) {
+	batches := make(map[int]entity.Batch)
+	res = make([]int8, len(batch))
+	for _, item := range batch {
+		p := int(item.Hash[0]) % c.partitions
+		if _, ok := batches[p]; !ok {
+			batches[p] = entity.Batch{}
+		}
+		batches[p] = append(batches[p], item)
+	}
+	var wg sync.WaitGroup
+	var mutex sync.Mutex
+	for k, batch := range batches {
+		wg.Add(1)
+		go func(k int, batch entity.Batch) {
+			r1, err := c.repos[k].Commit(batch)
+			mutex.Lock()
+			if err != nil {
+				c.log.Debugf(err.Error())
+				for _, item := range batch {
+					res[item.N] = entity.COMMIT_ERROR
 				}
 			} else {
 				for i, item := range batch {

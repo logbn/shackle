@@ -27,6 +27,11 @@ const (
 	ROLLBACK_SUCCESS    int8 = 0 // Proceed             - Lock removed
 	ROLLBACK_UNEXPECTED int8 = 1 // State unknown       - Lock missing
 	ROLLBACK_ERROR      int8 = 2 // Pause processing    - Lock not granted
+
+	COMMIT_SUCCESS    int8 = 0 // Proceed             - Hash Committed
+	COMMIT_EXISTS     int8 = 1 // Proceed             - Hash Committed
+	COMMIT_UNEXPECTED int8 = 2 // State unknown       - Lock missing
+	COMMIT_ERROR      int8 = 3 // Pause processing    - Lock not granted
 )
 
 func LockBatchFromRequest(body []byte) (ent Batch, err error) {

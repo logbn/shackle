@@ -17,9 +17,11 @@ import (
 	"highvolume.io/shackle/internal/entity"
 )
 
+// Hash is a primary hash repository
 type Hash interface {
 	Lock(batch entity.Batch) (res []int8, err error)
 	Rollback(batch entity.Batch) (res []int8, err error)
+	Commit(batch entity.Batch) (res []int8, err error)
 	Close()
 }
 
@@ -119,7 +121,6 @@ func (c *hash) Lock(batch entity.Batch) (res []int8, err error) {
 	if len(batch) < 1 {
 		return
 	}
-	var keys []byte
 	res = make([]int8, len(batch))
 
 	c.mutex.Lock()
@@ -157,13 +158,9 @@ func (c *hash) Lock(batch entity.Batch) (res []int8, err error) {
 				} else if !lmdb.IsNotFound(err) {
 					return err
 				} else {
-					keys = append(keys, item.Hash...)
 					c.cache.Add(string(item.Hash), tss, tss)
 					err = hcur.Put(ts, item.Hash, 0)
 				}
-			}
-			if len(keys) == 0 {
-				return nil
 			}
 			return nil
 		})
@@ -196,17 +193,78 @@ func (c *hash) Rollback(batch entity.Batch) (res []int8, err error) {
 				binary.BigEndian.PutUint64(ts, uint64(tsi))
 				err = tstxn.Del(c.tsdbi, ts, item.Hash)
 				if err == nil {
+					if !c.cache.Remove(hs) {
+						res[i] = entity.ROLLBACK_ERROR
+					}
 					removed[hs] = v.(string)
 				} else if lmdb.IsNotFound(err) {
 					res[i] = entity.ROLLBACK_UNEXPECTED
 				} else {
 					res[i] = entity.ROLLBACK_ERROR
-					return err
 				}
 			} else {
 				res[i] = entity.ROLLBACK_UNEXPECTED
 			}
 		}
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		for k, tss := range removed {
+			c.cache.Add(string(k), tss, tss)
+		}
+	}
+	return
+}
+
+// Commit removes locks
+func (c *hash) Commit(batch entity.Batch) (res []int8, err error) {
+	var removed = map[string]string{}
+	res = make([]int8, len(batch))
+	err = c.ixenv.Update(func(ixtxn *lmdb.Txn) error {
+		err = c.tsenv.Update(func(tstxn *lmdb.Txn) error {
+			hcur, err := tstxn.OpenCursor(c.tsdbi)
+			if err != nil {
+				return err
+			}
+			defer hcur.Close()
+			for i, item := range batch {
+				hs := string(item.Hash)
+				v, _ := c.cache.Get(hs)
+				var tsi int
+				if v == nil {
+					tsi = int(c.clock.Now().UnixNano())
+				} else {
+					tsi, err = strconv.Atoi(v.(string))
+				}
+				if err != nil {
+					return err
+				}
+				var ts = make([]byte, 16)
+				binary.BigEndian.PutUint64(ts, uint64(tsi))
+				err = ixtxn.Put(c.ixdbi, item.Hash[:c.keypfx], item.Hash[c.keypfx:], lmdb.NoDupData)
+				if err == nil {
+					if !c.cache.Remove(hs) {
+						res[i] = entity.COMMIT_UNEXPECTED
+						err = hcur.Put(ts, item.Hash, 0)
+					} else if v != nil {
+						removed[hs] = v.(string)
+					}
+				} else if lmdb.IsErrno(err, lmdb.KeyExist) {
+					res[i] = entity.COMMIT_EXISTS
+					err = nil
+				} else {
+					res[i] = entity.COMMIT_ERROR
+					return err
+				}
+			}
+			if err != nil {
+				return err
+			}
+			return nil
+		})
 		if err != nil {
 			return err
 		}
