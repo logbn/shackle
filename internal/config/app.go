@@ -41,8 +41,6 @@ type Hash struct {
 	Partitions     int           `yaml:"partitions"`
 	Replicas       int           `yaml:"replicas"`
 	Surrogates     int           `yaml:"surrogates"`
-	Length         int           `yaml:"length"`
-	KeySize        int           `yaml:"keysize"`
 	KeyExpiration  time.Duration `yaml:"key_expiration"`
 	LockExpiration time.Duration `yaml:"lock_expiration"`
 	CacheSize      int           `yaml:"cachesize"`

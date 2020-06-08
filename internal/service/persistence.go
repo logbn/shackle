@@ -42,6 +42,8 @@ func NewPersistence(cfg *config.Hash, log log.Logger) (r *persistence, err error
 }
 
 // Lock determines whether each hash has been seen and locks for processing
+// Locks have a set expiration (default 30s). Items are unlocked after this timeout expires.
+// Lock abandonment is measured and exposed as a metric.
 func (c persistence) Lock(batch entity.Batch) (res []int8, err error) {
 	batches := make(map[int]entity.Batch)
 	res = make([]int8, len(batch))
@@ -62,7 +64,7 @@ func (c persistence) Lock(batch entity.Batch) (res []int8, err error) {
 			if err != nil {
 				c.log.Debugf(err.Error())
 				for _, item := range batch {
-					res[item.N] = entity.LOCK_ERROR
+					res[item.N] = entity.ITEM_ERROR
 				}
 			} else {
 				for i, item := range batch {
@@ -99,7 +101,7 @@ func (c persistence) Rollback(batch entity.Batch) (res []int8, err error) {
 			if err != nil {
 				c.log.Debugf(err.Error())
 				for _, item := range batch {
-					res[item.N] = entity.ROLLBACK_ERROR
+					res[item.N] = entity.ITEM_ERROR
 				}
 			} else {
 				for i, item := range batch {
@@ -115,7 +117,11 @@ func (c persistence) Rollback(batch entity.Batch) (res []int8, err error) {
 	return
 }
 
-// Commit commits locked hashes to the index
+// Commit will write hashes to the index and remove them from the lock if present.
+// A commit will always succeed, regardless of whether the items are locked or by whom.
+// A commit against an existing item will not indicate whether the item already existed.
+// Commit volume against existing items is measured and exposed as a metric.
+// The only way to read the state of an item is to acquire a lock.
 func (c persistence) Commit(batch entity.Batch) (res []int8, err error) {
 	batches := make(map[int]entity.Batch)
 	res = make([]int8, len(batch))
@@ -136,7 +142,7 @@ func (c persistence) Commit(batch entity.Batch) (res []int8, err error) {
 			if err != nil {
 				c.log.Debugf(err.Error())
 				for _, item := range batch {
-					res[item.N] = entity.COMMIT_ERROR
+					res[item.N] = entity.ITEM_ERROR
 				}
 			} else {
 				for i, item := range batch {

@@ -18,20 +18,11 @@ type BatchItem struct {
 }
 
 const (
-	LOCK_SUCCESS    int8 = 0 // Proceed             - Lock granted
-	LOCK_EXISTS     int8 = 1 // Do not proceed      - Lock not granted
-	LOCK_BUSY       int8 = 2 // Retry after timeout - Lock not granted
-	LOCK_ABANDONNED int8 = 3 // State unknown       - Lock granted
-	LOCK_ERROR      int8 = 4 // Pause processing    - Lock not granted
-
-	ROLLBACK_SUCCESS    int8 = 0 // Proceed             - Lock removed
-	ROLLBACK_UNEXPECTED int8 = 1 // State unknown       - Lock missing
-	ROLLBACK_ERROR      int8 = 2 // Pause processing    - Lock not granted
-
-	COMMIT_SUCCESS    int8 = 0 // Proceed             - Hash Committed
-	COMMIT_EXISTS     int8 = 1 // Proceed             - Hash Committed
-	COMMIT_UNEXPECTED int8 = 2 // State unknown       - Lock missing
-	COMMIT_ERROR      int8 = 3 // Pause processing    - Lock not granted
+	ITEM_OPEN   int8 = 0 //  Lock required           - Lock granted
+	ITEM_EXISTS int8 = 1 //  Do not proceed          - Lock not granted
+	ITEM_LOCKED int8 = 2 //  Proceed with processing - Lock granted
+	ITEM_BUSY   int8 = 3 //  Retry after timeout     - Lock not granted
+	ITEM_ERROR  int8 = 4 //  Retry after timeout     - Lock not granted
 )
 
 func LockBatchFromRequest(body []byte) (ent Batch, err error) {
