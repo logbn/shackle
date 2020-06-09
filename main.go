@@ -52,7 +52,10 @@ func main() {
 		wg.Add(1)
 		go func(i int) {
 			cfg := loadConfig(logger, paths[i])
-			log.SetLevelLogrus(logger, cfg.Log.Level)
+			err := log.SetLevelLogrus(logger, cfg.Log.Level)
+			if err != nil {
+				logger.Errorf(err.Error())
+			}
 			// App Startup
 			var (
 				api *app.Api

@@ -1,6 +1,8 @@
 package log
 
 import (
+	"fmt"
+
 	"github.com/onrik/logrus/filename"
 	"github.com/sirupsen/logrus"
 )
@@ -43,12 +45,12 @@ func NewLogrus() *logrus.Logger {
 	return log
 }
 
-func SetLevelLogrus(logger *logrus.Logger, levelStr string) *logrus.Logger {
+func SetLevelLogrus(logger *logrus.Logger, levelStr string) (err error) {
 	// Log Level
 	level, err := logrus.ParseLevel(levelStr)
 	if err != nil {
-		logger.Fatalf(`Invalid log level "%s"`, level)
+		return fmt.Errorf(`Invalid log level "%s"`, level)
 	}
 	logger.SetLevel(level)
-	return logger
+	return
 }
