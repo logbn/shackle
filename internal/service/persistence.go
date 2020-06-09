@@ -26,13 +26,13 @@ type persistence struct {
 }
 
 // NewPersistence returns a persistence service
-func NewPersistence(cfg *config.Hash, log log.Logger) (r *persistence, err error) {
+func NewPersistence(cfg *config.Hash, rfh repo.FactoryHash, log log.Logger) (r *persistence, err error) {
 	var (
 		partitions = cfg.Partitions
 		repos      = map[int]repo.Hash{}
 	)
 	for i := 0; i < partitions; i++ {
-		repos[i], err = repo.NewHash(cfg, i)
+		repos[i], err = rfh(cfg, i)
 		if err != nil {
 			return
 		}
@@ -45,27 +45,20 @@ func NewPersistence(cfg *config.Hash, log log.Logger) (r *persistence, err error
 // Locks have a set expiration (default 30s). Items are unlocked after this timeout expires.
 // Lock abandonment is measured and exposed as a metric.
 func (c persistence) Lock(batch entity.Batch) (res []int8, err error) {
-	batches := make(map[int]entity.Batch)
 	res = make([]int8, len(batch))
-	for _, item := range batch {
-		p := int(item.Hash[0]) % c.partitions
-		if _, ok := batches[p]; !ok {
-			batches[p] = entity.Batch{}
-		}
-		batches[p] = append(batches[p], item)
-	}
 	var wg sync.WaitGroup
 	var mutex sync.Mutex
-	for k, batch := range batches {
+	for k, batch := range batch.Partitioned(c.partitions) {
 		wg.Add(1)
 		go func(k int, batch entity.Batch) {
-			r1, err := c.repos[k].Lock(batch)
+			r1, err2 := c.repos[k].Lock(batch)
 			mutex.Lock()
-			if err != nil {
-				c.log.Debugf(err.Error())
+			if err2 != nil {
+				c.log.Debugf(err2.Error())
 				for _, item := range batch {
 					res[item.N] = entity.ITEM_ERROR
 				}
+				err = err2
 			} else {
 				for i, item := range batch {
 					res[item.N] = r1[i]
@@ -82,27 +75,20 @@ func (c persistence) Lock(batch entity.Batch) (res []int8, err error) {
 
 // Rollback determines whether each hash has been seen and locks for processing
 func (c persistence) Rollback(batch entity.Batch) (res []int8, err error) {
-	batches := make(map[int]entity.Batch)
 	res = make([]int8, len(batch))
-	for _, item := range batch {
-		p := int(item.Hash[0]) % c.partitions
-		if _, ok := batches[p]; !ok {
-			batches[p] = entity.Batch{}
-		}
-		batches[p] = append(batches[p], item)
-	}
 	var wg sync.WaitGroup
 	var mutex sync.Mutex
-	for k, batch := range batches {
+	for k, batch := range batch.Partitioned(c.partitions) {
 		wg.Add(1)
 		go func(k int, batch entity.Batch) {
-			r1, err := c.repos[k].Rollback(batch)
+			r1, err2 := c.repos[k].Rollback(batch)
 			mutex.Lock()
-			if err != nil {
-				c.log.Debugf(err.Error())
+			if err2 != nil {
+				c.log.Debugf(err2.Error())
 				for _, item := range batch {
 					res[item.N] = entity.ITEM_ERROR
 				}
+				err = err2
 			} else {
 				for i, item := range batch {
 					res[item.N] = r1[i]
@@ -123,27 +109,20 @@ func (c persistence) Rollback(batch entity.Batch) (res []int8, err error) {
 // Commit volume against existing items is measured and exposed as a metric.
 // The only way to read the state of an item is to acquire a lock.
 func (c persistence) Commit(batch entity.Batch) (res []int8, err error) {
-	batches := make(map[int]entity.Batch)
 	res = make([]int8, len(batch))
-	for _, item := range batch {
-		p := int(item.Hash[0]) % c.partitions
-		if _, ok := batches[p]; !ok {
-			batches[p] = entity.Batch{}
-		}
-		batches[p] = append(batches[p], item)
-	}
 	var wg sync.WaitGroup
 	var mutex sync.Mutex
-	for k, batch := range batches {
+	for k, batch := range batch.Partitioned(c.partitions) {
 		wg.Add(1)
 		go func(k int, batch entity.Batch) {
-			r1, err := c.repos[k].Commit(batch)
+			r1, err2 := c.repos[k].Commit(batch)
 			mutex.Lock()
-			if err != nil {
-				c.log.Debugf(err.Error())
+			if err2 != nil {
+				c.log.Debugf(err2.Error())
 				for _, item := range batch {
 					res[item.N] = entity.ITEM_ERROR
 				}
+				err = err2
 			} else {
 				for i, item := range batch {
 					res[item.N] = r1[i]

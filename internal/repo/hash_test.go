@@ -20,26 +20,26 @@ func TestNewHash(t *testing.T) {
 	os.MkdirAll(realdir, 0777)
 	t.Run("NonExistantDatabase", func(t *testing.T) {
 		_, err := NewHash(&config.Hash{
-			IndexPath: realdir,
+			IndexPath:      realdir,
 			TimeseriesPath: fakedir,
-			CacheSize: 1000,
-			Partitions: 1,
+			CacheSize:      1000,
+			Partitions:     1,
 		}, 0)
 		require.True(t, os.IsNotExist(err))
 		_, err = NewHash(&config.Hash{
-			IndexPath: fakedir,
+			IndexPath:      fakedir,
 			TimeseriesPath: realdir,
-			CacheSize: 1000,
-			Partitions: 1,
+			CacheSize:      1000,
+			Partitions:     1,
 		}, 0)
 		require.True(t, os.IsNotExist(err))
 	})
 	t.Run("Success", func(t *testing.T) {
 		_, err := NewHash(&config.Hash{
-			IndexPath: realdir,
+			IndexPath:      realdir,
 			TimeseriesPath: realdir,
-			CacheSize: 1000,
-			Partitions: 1,
+			CacheSize:      1000,
+			Partitions:     1,
 		}, 0)
 		require.Nil(t, err)
 	})
@@ -52,13 +52,13 @@ func TestHash(t *testing.T) {
 	os.RemoveAll(tmpdir)
 	os.MkdirAll(tmpdir, 0777)
 	repo, err := NewHash(&config.Hash{
-		IndexPath: tmpdir,
+		IndexPath:      tmpdir,
 		TimeseriesPath: tmpdir,
-		CacheSize: 1000,
-		Partitions: 1,
+		CacheSize:      1000,
+		Partitions:     1,
 	}, 0)
 	require.Nil(t, err)
-	repo.clock = clk
+	repo.(*hash).clock = clk
 
 	t.Run("LockCommit", func(t *testing.T) {
 		items := entity.Batch{
@@ -202,6 +202,39 @@ func TestHash(t *testing.T) {
 			assert.Equal(t, entity.ITEM_EXISTS, res[i])
 		}
 	})
+	t.Run("Duplicates", func(t *testing.T) {
+		items := entity.Batch{
+			entity.BatchItem{0, []byte("0000000000000060")},
+			entity.BatchItem{1, []byte("0000000000000060")},
+			entity.BatchItem{2, []byte("0000000000000060")},
+			entity.BatchItem{3, []byte("0000000000000060")},
+		}
+		// Lock Items
+		res, err := repo.Lock(items)
+		require.Nil(t, err)
+		assert.Len(t, res, 4)
+		// First item is locked, all duplicates are busy
+		assert.Equal(t, entity.ITEM_LOCKED, res[0])
+		for i := 1; i < len(res); i++ {
+			assert.Equal(t, entity.ITEM_BUSY, res[i])
+		}
+		// Rollback Items
+		res, err = repo.Rollback(items)
+		require.Nil(t, err)
+		assert.Len(t, res, 4)
+		// All rolled back duplicates should be open
+		for i := 0; i < len(res); i++ {
+			assert.Equal(t, entity.ITEM_OPEN, res[i])
+		}
+		// Commit Items
+		res, err = repo.Commit(items)
+		require.Nil(t, err)
+		assert.Len(t, res, 4)
+		// All committed duplicates should exist
+		for i := 0; i < len(res); i++ {
+			assert.Equal(t, entity.ITEM_EXISTS, res[i])
+		}
+	})
 	t.Run("EmptyBatch", func(t *testing.T) {
 		items := entity.Batch{}
 		// Lock Items
@@ -219,17 +252,16 @@ func TestHash(t *testing.T) {
 	})
 }
 
-
 // HashClose
 func TestHashClose(t *testing.T) {
 	tmpdir := os.TempDir() + "/shackletest/lmdbclose"
 	os.RemoveAll(tmpdir)
 	os.MkdirAll(tmpdir, 0777)
 	repo, err := NewHash(&config.Hash{
-		IndexPath: tmpdir,
+		IndexPath:      tmpdir,
 		TimeseriesPath: tmpdir,
-		CacheSize: 1000,
-		Partitions: 1,
+		CacheSize:      1000,
+		Partitions:     1,
 	}, 0)
 	require.Nil(t, err)
 	repo.Close()

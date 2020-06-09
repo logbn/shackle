@@ -24,6 +24,9 @@ var (
 	lmdbtsdbiopt = lmdb.DupSort | lmdb.DupFixed | lmdb.Create
 )
 
+// FactoryHash is a factory that returns a hash repository
+type FactoryHash func(cfg *config.Hash, partition int) (r Hash, err error)
+
 // Hash is a primary hash repository
 type Hash interface {
 	Lock(batch entity.Batch) (res []int8, err error)
@@ -46,7 +49,7 @@ type hash struct {
 }
 
 // NewHash returns a hash respository
-func NewHash(cfg *config.Hash, partition int) (r *hash, err error) {
+func NewHash(cfg *config.Hash, partition int) (r Hash, err error) {
 	var h string
 	var (
 		partitions = cfg.Partitions
@@ -54,8 +57,8 @@ func NewHash(cfg *config.Hash, partition int) (r *hash, err error) {
 
 		ixenv *lmdb.Env
 		tsenv *lmdb.Env
-		ixdbi  lmdb.DBI
-		tsdbi  lmdb.DBI
+		ixdbi lmdb.DBI
+		tsdbi lmdb.DBI
 	)
 	if _, err = os.Stat(cfg.IndexPath); os.IsNotExist(err) {
 		return
@@ -106,7 +109,7 @@ func NewHash(cfg *config.Hash, partition int) (r *hash, err error) {
 	}, nil
 }
 
-// Lock determines whether each hash has been seen and locks for processing
+// Lock locks items for processing if they are not already locked or committed
 func (c *hash) Lock(batch entity.Batch) (res []int8, err error) {
 	if len(batch) < 1 {
 		return
@@ -118,11 +121,6 @@ func (c *hash) Lock(batch entity.Batch) (res []int8, err error) {
 	var tss = strconv.Itoa(int(tsi))
 	var ts = make([]byte, 8)
 	binary.BigEndian.PutUint64(ts, uint64(tsi))
-	for i, item := range batch {
-		if c.cache.Contains(string(item.Hash)) {
-			res[i] = entity.ITEM_BUSY
-		}
-	}
 	err = c.tsenv.Update(func(tstxn *lmdb.Txn) (err error) {
 		err = c.ixenv.View(func(ixtxn *lmdb.Txn) (err error) {
 			ixtxn.RawRead = true
@@ -132,7 +130,8 @@ func (c *hash) Lock(batch entity.Batch) (res []int8, err error) {
 			}
 			defer hcur.Close()
 			for i, item := range batch {
-				if res[i] != 0 {
+				if c.cache.Contains(string(item.Hash)) {
+					res[i] = entity.ITEM_BUSY
 					continue
 				}
 				_, err = ixtxn.Get(c.ixdbi, item.Hash)

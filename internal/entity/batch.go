@@ -8,6 +8,14 @@ import (
 	"github.com/valyala/fastjson"
 )
 
+const (
+	ITEM_OPEN   int8 = 0 //  Lock required           - Lock granted
+	ITEM_EXISTS int8 = 1 //  Do not proceed          - Lock not granted
+	ITEM_LOCKED int8 = 2 //  Proceed with processing - Lock granted
+	ITEM_BUSY   int8 = 3 //  Retry after timeout     - Lock not granted
+	ITEM_ERROR  int8 = 4 //  Retry after timeout     - Lock not granted
+)
+
 var batchParserPool = sync.Pool{New: func() interface{} { return new(fastjson.Parser) }}
 
 // Batch represents an incoming batch of items to lock
@@ -17,13 +25,18 @@ type BatchItem struct {
 	Hash []byte
 }
 
-const (
-	ITEM_OPEN   int8 = 0 //  Lock required           - Lock granted
-	ITEM_EXISTS int8 = 1 //  Do not proceed          - Lock not granted
-	ITEM_LOCKED int8 = 2 //  Proceed with processing - Lock granted
-	ITEM_BUSY   int8 = 3 //  Retry after timeout     - Lock not granted
-	ITEM_ERROR  int8 = 4 //  Retry after timeout     - Lock not granted
-)
+func (b Batch) Partitioned(n int) map[int]Batch {
+	batches := make(map[int]Batch)
+	for _, item := range b {
+		// TODO - Get a better
+		p := int(item.Hash[0]) % n
+		if _, ok := batches[p]; !ok {
+			batches[p] = Batch{}
+		}
+		batches[p] = append(batches[p], item)
+	}
+	return batches
+}
 
 func LockBatchFromRequest(body []byte) (ent Batch, err error) {
 	ent, err = BatchFromJson(body)

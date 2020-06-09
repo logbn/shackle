@@ -6,6 +6,7 @@ import (
 	"highvolume.io/shackle/internal/api/http"
 	"highvolume.io/shackle/internal/config"
 	"highvolume.io/shackle/internal/log"
+	"highvolume.io/shackle/internal/repo"
 	"highvolume.io/shackle/internal/service"
 )
 
@@ -17,7 +18,7 @@ type Api struct {
 
 func NewApi(cfg config.App, log log.Logger) *Api {
 	// service.NewPersistence
-	svcPersistence, err := service.NewPersistence(cfg.Repo.Hash, log)
+	svcPersistence, err := service.NewPersistence(cfg.Repo.Hash, repo.NewHash, log)
 	if svcPersistence == nil || err != nil {
 		log.Fatal("Persistence service misconfigured - ", err)
 	}
