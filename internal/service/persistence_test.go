@@ -34,6 +34,7 @@ func TestPersistence(t *testing.T) {
 	assert.Equal(t, 4, len(svc.repos))
 
 	t.Run("Lock", func(t *testing.T) {
+		svc.log = &mock.Logger{}
 		items := entity.Batch{
 			entity.BatchItem{0, []byte("LOCKED-000000000")},
 			entity.BatchItem{1, []byte("LOCKED-000000001")},
@@ -47,13 +48,15 @@ func TestPersistence(t *testing.T) {
 		for i := 0; i < len(res); i++ {
 			assert.Equal(t, entity.ITEM_LOCKED, res[i])
 		}
+		assert.Len(t, svc.log.(*mock.Logger).Errors, 0)
 	})
 	t.Run("Lock Error", func(t *testing.T) {
+		svc.log = &mock.Logger{}
 		items := entity.Batch{
-			entity.BatchItem{0, []byte("LOCKED-000000010")},
-			entity.BatchItem{1, []byte("ERROR-0000000011")},
-			entity.BatchItem{2, []byte("FATAL-0000000012")},
-			entity.BatchItem{3, []byte("FATAL-0000000013")},
+			entity.BatchItem{0, []byte("0LOCKED-00000010")},
+			entity.BatchItem{1, []byte("1ERROR-000000011")},
+			entity.BatchItem{2, []byte("2FATAL-000000012")},
+			entity.BatchItem{3, []byte("3FATAL-000000013")},
 		}
 		// Lock Items
 		res, err := svc.Lock(items)
@@ -62,8 +65,10 @@ func TestPersistence(t *testing.T) {
 		assert.Equal(t, entity.ITEM_ERROR, res[1])
 		assert.Equal(t, entity.ITEM_ERROR, res[2])
 		assert.Equal(t, entity.ITEM_ERROR, res[3])
+		assert.Len(t, svc.log.(*mock.Logger).Errors, 2)
 	})
 	t.Run("Commit", func(t *testing.T) {
+		svc.log = &mock.Logger{}
 		items := entity.Batch{
 			entity.BatchItem{0, []byte("EXISTS-000000020")},
 			entity.BatchItem{1, []byte("EXISTS-000000021")},
@@ -77,13 +82,15 @@ func TestPersistence(t *testing.T) {
 		for i := 0; i < len(res); i++ {
 			assert.Equal(t, entity.ITEM_EXISTS, res[i])
 		}
+		assert.Len(t, svc.log.(*mock.Logger).Errors, 0)
 	})
 	t.Run("Commit Error", func(t *testing.T) {
+		svc.log = &mock.Logger{}
 		items := entity.Batch{
-			entity.BatchItem{0, []byte("EXISTS-000000030")},
-			entity.BatchItem{1, []byte("ERROR-0000000031")},
-			entity.BatchItem{2, []byte("FATAL-0000000032")},
-			entity.BatchItem{3, []byte("FATAL-0000000033")},
+			entity.BatchItem{0, []byte("0EXISTS-00000030")},
+			entity.BatchItem{1, []byte("1ERROR-000000031")},
+			entity.BatchItem{2, []byte("2FATAL-000000032")},
+			entity.BatchItem{3, []byte("3FATAL-000000033")},
 		}
 		// Commit Items
 		res, err := svc.Commit(items)
@@ -92,8 +99,10 @@ func TestPersistence(t *testing.T) {
 		assert.Equal(t, entity.ITEM_ERROR, res[1])
 		assert.Equal(t, entity.ITEM_ERROR, res[2])
 		assert.Equal(t, entity.ITEM_ERROR, res[3])
+		assert.Len(t, svc.log.(*mock.Logger).Errors, 2)
 	})
 	t.Run("Rollback", func(t *testing.T) {
+		svc.log = &mock.Logger{}
 		items := entity.Batch{
 			entity.BatchItem{0, []byte("EXISTS-000000020")},
 			entity.BatchItem{1, []byte("EXISTS-000000021")},
@@ -110,13 +119,15 @@ func TestPersistence(t *testing.T) {
 		for i := 0; i < len(res); i++ {
 			assert.Equal(t, entity.ITEM_EXISTS, res[i])
 		}
+		assert.Len(t, svc.log.(*mock.Logger).Errors, 0)
 	})
 	t.Run("Commit Error", func(t *testing.T) {
+		svc.log = &mock.Logger{}
 		items := entity.Batch{
-			entity.BatchItem{0, []byte("EXISTS-000000030")},
-			entity.BatchItem{1, []byte("ERROR-0000000031")},
-			entity.BatchItem{2, []byte("FATAL-0000000032")},
-			entity.BatchItem{3, []byte("FATAL-0000000033")},
+			entity.BatchItem{0, []byte("0EXISTS-00000030")},
+			entity.BatchItem{1, []byte("1ERROR-000000031")},
+			entity.BatchItem{2, []byte("2FATAL-000000032")},
+			entity.BatchItem{3, []byte("3FATAL-000000033")},
 		}
 		// Lock Items
 		res, err := svc.Lock(items)
@@ -128,6 +139,7 @@ func TestPersistence(t *testing.T) {
 		assert.Equal(t, entity.ITEM_ERROR, res[1])
 		assert.Equal(t, entity.ITEM_ERROR, res[2])
 		assert.Equal(t, entity.ITEM_ERROR, res[3])
+		assert.Len(t, svc.log.(*mock.Logger).Errors, 4)
 	})
 
 	svc.Close()

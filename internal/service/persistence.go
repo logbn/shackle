@@ -54,7 +54,7 @@ func (c persistence) Lock(batch entity.Batch) (res []int8, err error) {
 			r1, err2 := c.repos[k].Lock(batch)
 			mutex.Lock()
 			if err2 != nil {
-				c.log.Debugf(err2.Error())
+				c.log.Errorf(err2.Error())
 				for _, item := range batch {
 					res[item.N] = entity.ITEM_ERROR
 				}
@@ -84,7 +84,7 @@ func (c persistence) Rollback(batch entity.Batch) (res []int8, err error) {
 			r1, err2 := c.repos[k].Rollback(batch)
 			mutex.Lock()
 			if err2 != nil {
-				c.log.Debugf(err2.Error())
+				c.log.Errorf(err2.Error())
 				for _, item := range batch {
 					res[item.N] = entity.ITEM_ERROR
 				}
@@ -118,7 +118,7 @@ func (c persistence) Commit(batch entity.Batch) (res []int8, err error) {
 			r1, err2 := c.repos[k].Commit(batch)
 			mutex.Lock()
 			if err2 != nil {
-				c.log.Debugf(err2.Error())
+				c.log.Errorf(err2.Error())
 				for _, item := range batch {
 					res[item.N] = entity.ITEM_ERROR
 				}
