@@ -60,6 +60,7 @@ func (l *Logger) String() string {
 		strings.Join(l.Errors, "\n"),
 		strings.Join(l.Warns, "\n"),
 		strings.Join(l.Infos, "\n"),
+		strings.Join(l.Debugs, "\n"),
 	}, "\n")
 }
 func (l *Logger) Reset() {
@@ -68,4 +69,5 @@ func (l *Logger) Reset() {
 	l.Errors = []string{}
 	l.Warns = []string{}
 	l.Infos = []string{}
+	l.Debugs = []string{}
 }
