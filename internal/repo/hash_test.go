@@ -227,10 +227,19 @@ func TestHash(t *testing.T) {
 			assert.Equal(t, entity.ITEM_OPEN, res[i])
 		}
 		// Commit Items
+		res, err = repo.Lock(items)
 		res, err = repo.Commit(items)
 		require.Nil(t, err)
 		assert.Len(t, res, 4)
 		// All committed duplicates should exist
+		for i := 0; i < len(res); i++ {
+			assert.Equal(t, entity.ITEM_EXISTS, res[i])
+		}
+		// Double Commit Items
+		res, err = repo.Commit(items)
+		require.Nil(t, err)
+		assert.Len(t, res, 4)
+		// All double committed duplicates should exist
 		for i := 0; i < len(res); i++ {
 			assert.Equal(t, entity.ITEM_EXISTS, res[i])
 		}

@@ -142,11 +142,9 @@ func (c *hash) Lock(batch entity.Batch) (res []int8, err error) {
 					c.cache.Add(string(item.Hash), tss, tss)
 					err = hcur.Put(ts, item.Hash, 0)
 					if err != nil {
-						res[i] = entity.ITEM_ERROR
 						return
 					}
 				} else {
-					res[i] = entity.ITEM_ERROR
 					return
 				}
 			}
@@ -181,8 +179,8 @@ func (c *hash) Rollback(batch entity.Batch) (res []int8, err error) {
 					if err == nil {
 						c.cache.Remove(hs)
 						removedFromCache[hs] = v.(string)
+						res[i] = entity.ITEM_OPEN
 					} else {
-						res[i] = entity.ITEM_ERROR
 						return
 					}
 				} else {
@@ -193,7 +191,6 @@ func (c *hash) Rollback(batch entity.Batch) (res []int8, err error) {
 						res[i] = entity.ITEM_OPEN
 						err = nil
 					} else {
-						res[i] = entity.ITEM_ERROR
 						return
 					}
 				}
@@ -203,7 +200,7 @@ func (c *hash) Rollback(batch entity.Batch) (res []int8, err error) {
 		if err != nil {
 			// Restore cache on transaction rollback
 			for k, tss := range removedFromCache {
-				c.cache.Add(string(k), tss, tss)
+				c.cache.Add(k, tss, tss)
 			}
 		}
 		return
@@ -223,6 +220,14 @@ func (c *hash) Commit(batch entity.Batch) (res []int8, err error) {
 		err = c.tsenv.Update(func(tstxn *lmdb.Txn) (err error) {
 			for i, item := range batch {
 				hs := string(item.Hash)
+				_, err = ixtxn.Get(c.ixdbi, item.Hash)
+				if err == nil {
+					res[i] = entity.ITEM_EXISTS
+					err = nil
+					continue
+				} else if !lmdb.IsNotFound(err) {
+					return
+				}
 				v, _ := c.cache.Get(hs)
 				var tsi int
 				if v == nil {
@@ -240,15 +245,10 @@ func (c *hash) Commit(batch entity.Batch) (res []int8, err error) {
 					} else {
 						err = tstxn.Put(c.tsdbi, ts, item.Hash, 0)
 						if err != nil {
-							res[i] = entity.ITEM_ERROR
 							return
 						}
 					}
-				} else if lmdb.IsErrno(err, lmdb.KeyExist) {
-					res[i] = entity.ITEM_EXISTS
-					err = nil
 				} else {
-					res[i] = entity.ITEM_ERROR
 					return
 				}
 			}
@@ -259,7 +259,7 @@ func (c *hash) Commit(batch entity.Batch) (res []int8, err error) {
 	if err != nil {
 		// Restore cache on transaction rollback
 		for k, tss := range removedFromCache {
-			c.cache.Add(string(k), tss, tss)
+			c.cache.Add(k, tss, tss)
 		}
 	}
 	return
