@@ -2,6 +2,7 @@ package repo
 
 import (
 	"encoding/binary"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -343,6 +344,23 @@ func TestHashSweepLocked(t *testing.T) {
 		require.Nil(t, err)
 		assert.Equal(t, 4, scanned)
 		assert.Equal(t, 2, abandoned)
+
+		clk.Add(time.Second)
+
+		// Sweep batch of 1000
+		items = make(entity.Batch, 1000)
+		for i := 0; i < 1000; i++ {
+			items[i] = entity.BatchItem{0, []byte("BIGBATCH0000"+fmt.Sprintf("%04d", i))}
+		}
+		res, err = repo.Lock(items)
+		require.Nil(t, err)
+		assert.Len(t, res, 1000)
+		clk.Add(lockExp + time.Second)
+		binary.BigEndian.PutUint64(lockexpts, uint64(clk.Now().Add(-1*lockExp).UnixNano()))
+		scanned, abandoned, err = repo.SweepLocked(lockexpts)
+		require.Nil(t, err)
+		assert.Equal(t, 1000, scanned)
+		assert.Equal(t, 1000, abandoned)
 	})
 
 	repo.Close()
@@ -364,6 +382,7 @@ func TestHashSweepExpired(t *testing.T) {
 	var clk = clock.NewMock()
 	var keyExpts = make([]byte, 8)
 	var keyExp = 24 * time.Hour
+	var res []int8
 	clk.Set(time.Now())
 	repo.(*hash).clock = clk
 
@@ -429,6 +448,21 @@ func TestHashSweepExpired(t *testing.T) {
 		maxAge, deleted, err = repo.SweepExpired(keyExpts, 2)
 		require.Nil(t, err)
 		assert.Equal(t, 0, deleted)
+		_ = maxAge
+
+		// Sweep batch of 1000
+		items = make(entity.Batch, 1000)
+		for i := 0; i < 1000; i++ {
+			items[i] = entity.BatchItem{0, []byte("BIGBATCH0000"+fmt.Sprintf("%04d", i))}
+		}
+		res, err = repo.Commit(items)
+		require.Nil(t, err)
+		assert.Len(t, res, 1000)
+		clk.Add(keyExp + time.Second)
+		binary.BigEndian.PutUint64(keyExpts, uint64(clk.Now().Add(-1*keyExp).UnixNano()))
+		maxAge, deleted, err = repo.SweepExpired(keyExpts, 2000)
+		require.Nil(t, err)
+		assert.Equal(t, 1000, deleted)
 		_ = maxAge
 	})
 

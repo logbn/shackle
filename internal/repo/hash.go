@@ -284,6 +284,7 @@ func (c *hash) Commit(batch entity.Batch) (res []int8, err error) {
 
 // SweepExpired deletes expired items
 func (c *hash) SweepExpired(expts []byte, limit int) (maxAge time.Duration, deleted int, err error) {
+	var v []byte
 	var ts []byte
 	var tss string
 	var keys []byte
@@ -300,15 +301,8 @@ func (c *hash) SweepExpired(expts []byte, limit int) (maxAge time.Duration, dele
 			}
 			defer hcur.Close()
 			for {
-				_, _, err := hcur.Get(nil, nil, lmdb.NextNoDup)
+				ts, _, err := hcur.Get(nil, nil, lmdb.NextNoDup)
 				if lmdb.IsNotFound(err) {
-					break
-				}
-				if err != nil {
-					return err
-				}
-				ts, keys, err = hcur.Get(nil, nil, lmdb.NextMultiple)
-				if lmdb.IsNotFound(err) || ts == nil {
 					break
 				}
 				if err != nil {
@@ -318,14 +312,25 @@ func (c *hash) SweepExpired(expts []byte, limit int) (maxAge time.Duration, dele
 					break
 				}
 				lastts = ts
-				multi := lmdb.WrapMulti(keys, c.keyLen)
-				for i := 0; i < multi.Len(); i++ {
-					err = ixtxn.Del(c.ixdbi, multi.Val(i), ts)
-					if err != nil && !lmdb.IsNotFound(err) {
+				keys = []byte("")
+				for {
+					_, v, err = hcur.Get(nil, nil, lmdb.NextMultiple)
+					if lmdb.IsNotFound(err) || ts == nil {
+						break
+					}
+					if err != nil {
 						return err
 					}
+					keys = append(keys, v...)
+					multi := lmdb.WrapMulti(v, c.keyLen)
+					for i := 0; i < multi.Len(); i++ {
+						err = ixtxn.Del(c.ixdbi, multi.Val(i), ts)
+						if err != nil && !lmdb.IsNotFound(err) {
+							return err
+						}
+					}
+					deleted += multi.Len()
 				}
-				deleted += multi.Len()
 				tss = strconv.Itoa(int(binary.BigEndian.Uint64(lastts)))
 				removedFromHistory[tss] = keys
 				hcur.Del(lmdb.NoDupData)
@@ -382,10 +387,13 @@ func (c *hash) SweepLocked(expts []byte) (scanned int, deleted int, err error) {
 		if err != nil && !lmdb.IsNotFound(err) {
 			return err
 		}
-		ts, _, err = hcur.Get(start, nil, 0)
-		if start != nil {
-			// Skip last processed record if we found a checkpoint
+		if start == nil {
 			ts, _, err = hcur.Get(nil, nil, lmdb.NextNoDup)
+		} else {
+			ts, _, err = hcur.Get(start, nil, lmdb.SetRange)
+			if bytes.Compare(ts, start) == 0 {
+				ts, _, err = hcur.Get(nil, nil, lmdb.NextNoDup)
+			}
 		}
 		for {
 			if lmdb.IsNotFound(err) || ts == nil {
@@ -399,26 +407,28 @@ func (c *hash) SweepLocked(expts []byte) (scanned int, deleted int, err error) {
 			}
 			lastts = ts
 			tss = strconv.Itoa(int(binary.BigEndian.Uint64(ts)))
-			_, keys, err := hcur.Get(nil, nil, lmdb.NextMultiple)
-			if lmdb.IsNotFound(err) {
-				break
-			}
-			if err != nil {
-				return err
-			}
-			multi := lmdb.WrapMulti(keys, c.keyLen)
-			for i := 0; i < multi.Len(); i++ {
-				v = multi.Val(i)
-				hs = string(v)
-				if c.cache.Remove(hs) {
-					err = tstxn.Del(c.tsdbi, ts, v)
-					if err != nil {
-						return err
-					}
-					removedFromCache[hs] = tss
-					deleted++
+			for {
+				_, keys, err := hcur.Get(nil, nil, lmdb.NextMultiple)
+				if lmdb.IsNotFound(err) || keys == nil {
+					break
 				}
-				scanned++
+				if err != nil {
+					return err
+				}
+				multi := lmdb.WrapMulti(keys, c.keyLen)
+				for i := 0; i < multi.Len(); i++ {
+					v = multi.Val(i)
+					hs = string(v)
+					if c.cache.Remove(hs) {
+						err = tstxn.Del(c.tsdbi, ts, v)
+						if err != nil {
+							return err
+						}
+						removedFromCache[hs] = tss
+						deleted++
+					}
+					scanned++
+				}
 			}
 			ts, _, err = hcur.Get(nil, nil, lmdb.NextNoDup)
 		}
