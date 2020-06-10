@@ -37,4 +37,6 @@ repo:
     keysize: 8
     key_expiration: 730h
     lock_expiration: 30s
+    sweep_interval: 1s
+    expiration_limit: 1000
     cachesize: 100000

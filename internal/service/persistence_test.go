@@ -104,10 +104,10 @@ func TestPersistence(t *testing.T) {
 	t.Run("Rollback", func(t *testing.T) {
 		svc.log = &mock.Logger{}
 		items := entity.Batch{
-			entity.BatchItem{0, []byte("EXISTS-000000020")},
-			entity.BatchItem{1, []byte("EXISTS-000000021")},
-			entity.BatchItem{2, []byte("EXISTS-000000022")},
-			entity.BatchItem{3, []byte("EXISTS-000000023")},
+			entity.BatchItem{0, []byte("EXISTS-000000040")},
+			entity.BatchItem{1, []byte("EXISTS-000000041")},
+			entity.BatchItem{2, []byte("EXISTS-000000042")},
+			entity.BatchItem{3, []byte("EXISTS-000000043")},
 		}
 		// Lock Items
 		res, err := svc.Lock(items)
@@ -121,13 +121,13 @@ func TestPersistence(t *testing.T) {
 		}
 		assert.Len(t, svc.log.(*mock.Logger).Errors, 0)
 	})
-	t.Run("Commit Error", func(t *testing.T) {
+	t.Run("Rollback Error", func(t *testing.T) {
 		svc.log = &mock.Logger{}
 		items := entity.Batch{
-			entity.BatchItem{0, []byte("0EXISTS-00000030")},
-			entity.BatchItem{1, []byte("1ERROR-000000031")},
-			entity.BatchItem{2, []byte("2FATAL-000000032")},
-			entity.BatchItem{3, []byte("3FATAL-000000033")},
+			entity.BatchItem{0, []byte("0EXISTS-00000050")},
+			entity.BatchItem{1, []byte("1ERROR-000000051")},
+			entity.BatchItem{2, []byte("2FATAL-000000052")},
+			entity.BatchItem{3, []byte("3FATAL-000000053")},
 		}
 		// Lock Items
 		res, err := svc.Lock(items)

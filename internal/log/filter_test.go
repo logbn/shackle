@@ -1,8 +1,8 @@
 package log
 
 import (
-	"fmt"
 	"bytes"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -24,7 +24,7 @@ func (b *failingBuffer) Write(in []byte) (res int, err error) {
 
 func TestFilter(t *testing.T) {
 	buf := &failingBuffer{bytes.Buffer{}}
-	f := Filter{W: buf, Filters:[][]byte{[]byte("test1"), []byte("test2")}}
+	f := Filter{W: buf, Filters: [][]byte{[]byte("test1"), []byte("test2")}}
 	res, err := f.Write([]byte("foo"))
 	require.Nil(t, err)
 	assert.Equal(t, res, 3)

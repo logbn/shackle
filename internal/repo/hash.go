@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"bytes"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
@@ -18,10 +19,13 @@ import (
 )
 
 var (
-	lmdbixenvopt = lmdb.NoReadahead | lmdb.NoMemInit | lmdb.NoSync | lmdb.NoMetaSync
-	lmdbtsenvopt = lmdb.NoReadahead | lmdb.NoMemInit
-	lmdbixdbiopt = lmdb.DupSort | lmdb.DupFixed | lmdb.Create
-	lmdbtsdbiopt = lmdb.DupSort | lmdb.DupFixed | lmdb.Create
+	lmdbixenvopt   = lmdb.NoMemInit | lmdb.NoReadahead | lmdb.NoSync | lmdb.NoMetaSync
+	lmdbtsenvopt   = lmdb.NoMemInit
+	lmdbixdbiopt   = lmdb.DupSort | lmdb.DupFixed | lmdb.Create
+	lmdbtsdbiopt   = lmdb.DupSort | lmdb.DupFixed | lmdb.Create
+	lmdbmetadbiopt = lmdb.Create
+
+	historyLockExpKey = []byte("LOCK_EXPIRATION")
 )
 
 // FactoryHash is a factory that returns a hash repository
@@ -32,20 +36,24 @@ type Hash interface {
 	Lock(batch entity.Batch) (res []int8, err error)
 	Rollback(batch entity.Batch) (res []int8, err error)
 	Commit(batch entity.Batch) (res []int8, err error)
+	SweepExpired(expts []byte, limit int) (maxAge time.Duration, deleted int, err error)
+	SweepLocked(expts []byte) (scanned int, deleted int, err error)
 	Close()
 }
 
 type hash struct {
-	clock    clock.Clock
-	delRatio float64
-	keyExp   time.Duration
-	lockExp  time.Duration
-	ixenv    *lmdb.Env
-	tsenv    *lmdb.Env
-	ixdbi    lmdb.DBI
-	tsdbi    lmdb.DBI
-	mutex    sync.Mutex
-	cache    lru.LRUCache
+	clock     clock.Clock
+	keyLen    int
+	keyExp    time.Duration
+	lockExp   time.Duration
+	ixenv     *lmdb.Env
+	tsenv     *lmdb.Env
+	ixdbi     lmdb.DBI
+	tsdbi     lmdb.DBI
+	ixmetadbi lmdb.DBI
+	tsmetadbi lmdb.DBI
+	mutex     sync.Mutex
+	cache     lru.LRUCache
 }
 
 // NewHash returns a hash respository
@@ -53,12 +61,13 @@ func NewHash(cfg *config.Hash, partition int) (r Hash, err error) {
 	var h string
 	var (
 		partitions = cfg.Partitions
-		delRatio   = 1.25
 
-		ixenv *lmdb.Env
-		tsenv *lmdb.Env
-		ixdbi lmdb.DBI
-		tsdbi lmdb.DBI
+		ixenv     *lmdb.Env
+		tsenv     *lmdb.Env
+		ixdbi     lmdb.DBI
+		tsdbi     lmdb.DBI
+		ixmetadbi lmdb.DBI
+		tsmetadbi lmdb.DBI
 	)
 	if _, err = os.Stat(cfg.IndexPath); os.IsNotExist(err) {
 		return
@@ -68,25 +77,29 @@ func NewHash(cfg *config.Hash, partition int) (r Hash, err error) {
 	}
 	b := byte(partition % partitions)
 	h = hex.EncodeToString([]byte{b})
-	var mkdb = func(path string, envopt, dbopt int, name string) (env *lmdb.Env, db lmdb.DBI, err error) {
+	var mkdb = func(path string, envopt, dbopt int, name string) (env *lmdb.Env, db lmdb.DBI, chkdb lmdb.DBI, err error) {
 		os.MkdirAll(path, 0777)
 		env, err = lmdb.NewEnv()
-		env.SetMaxDBs(1)
+		env.SetMaxDBs(2)
 		env.SetMapSize(int64(1 << 37))
 		env.Open(path, uint(envopt), 0777)
 		err = env.Update(func(txn *lmdb.Txn) (err error) {
 			db, err = txn.OpenDBI(name, uint(dbopt))
+			if err != nil {
+				return
+			}
+			chkdb, err = txn.OpenDBI("meta", uint(lmdbmetadbiopt))
 			return
 		})
 		return
 	}
 	ixpath := fmt.Sprintf("%s/%s/%s.ix.lmdb", cfg.IndexPath, string(h[0]), h)
-	ixenv, ixdbi, err = mkdb(ixpath, lmdbixenvopt, lmdbixdbiopt, "index")
+	ixenv, ixdbi, ixmetadbi, err = mkdb(ixpath, lmdbixenvopt, lmdbixdbiopt, "index")
 	if err != nil {
 		return
 	}
 	tspath := fmt.Sprintf("%s/%s/%s.ts.lmdb", cfg.TimeseriesPath, string(h[0]), h)
-	tsenv, tsdbi, err = mkdb(tspath, lmdbtsenvopt, lmdbtsdbiopt, "history")
+	tsenv, tsdbi, tsmetadbi, err = mkdb(tspath, lmdbtsenvopt, lmdbtsdbiopt, "history")
 	if err != nil {
 		return
 	}
@@ -97,13 +110,15 @@ func NewHash(cfg *config.Hash, partition int) (r Hash, err error) {
 
 	return &hash{
 		clock.New(),
-		delRatio,
+		cfg.KeyLength,
 		cfg.KeyExpiration,
 		cfg.LockExpiration,
 		ixenv,
 		tsenv,
 		ixdbi,
 		tsdbi,
+		ixmetadbi,
+		tsmetadbi,
 		sync.Mutex{},
 		cache,
 	}, nil
@@ -115,20 +130,16 @@ func (c *hash) Lock(batch entity.Batch) (res []int8, err error) {
 		return
 	}
 	res = make([]int8, len(batch))
+	var ts = make([]byte, 8)
+
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	var tsi = c.clock.Now().UnixNano()
 	var tss = strconv.Itoa(int(tsi))
-	var ts = make([]byte, 8)
 	binary.BigEndian.PutUint64(ts, uint64(tsi))
 	err = c.tsenv.Update(func(tstxn *lmdb.Txn) (err error) {
 		err = c.ixenv.View(func(ixtxn *lmdb.Txn) (err error) {
 			ixtxn.RawRead = true
-			hcur, err := tstxn.OpenCursor(c.tsdbi)
-			if err != nil {
-				return
-			}
-			defer hcur.Close()
 			for i, item := range batch {
 				if c.cache.Contains(string(item.Hash)) {
 					res[i] = entity.ITEM_BUSY
@@ -140,7 +151,7 @@ func (c *hash) Lock(batch entity.Batch) (res []int8, err error) {
 				} else if lmdb.IsNotFound(err) {
 					res[i] = entity.ITEM_LOCKED
 					c.cache.Add(string(item.Hash), tss, tss)
-					err = hcur.Put(ts, item.Hash, 0)
+					err = tstxn.Put(c.tsdbi, ts, item.Hash, 0)
 					if err != nil {
 						return
 					}
@@ -165,7 +176,11 @@ func (c *hash) Rollback(batch entity.Batch) (res []int8, err error) {
 		return
 	}
 	res = make([]int8, len(batch))
+	var ts = make([]byte, 8)
 	var removedFromCache = map[string]string{}
+
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
 	err = c.ixenv.View(func(ixtxn *lmdb.Txn) (err error) {
 		err = c.tsenv.Update(func(tstxn *lmdb.Txn) (err error) {
 			for i, item := range batch {
@@ -173,7 +188,6 @@ func (c *hash) Rollback(batch entity.Batch) (res []int8, err error) {
 				v, ok := c.cache.Get(hs)
 				if ok {
 					tsi, _ := strconv.Atoi(v.(string))
-					var ts = make([]byte, 8)
 					binary.BigEndian.PutUint64(ts, uint64(tsi))
 					err = tstxn.Del(c.tsdbi, ts, item.Hash)
 					if err == nil {
@@ -213,8 +227,13 @@ func (c *hash) Commit(batch entity.Batch) (res []int8, err error) {
 	if len(batch) < 1 {
 		return
 	}
+	var tsi int
+	var ts = make([]byte, 8)
 	res = make([]int8, len(batch))
 	var removedFromCache = map[string]string{}
+
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
 	var newtsi = int(c.clock.Now().UnixNano())
 	err = c.ixenv.Update(func(ixtxn *lmdb.Txn) (err error) {
 		err = c.tsenv.Update(func(tstxn *lmdb.Txn) (err error) {
@@ -229,13 +248,11 @@ func (c *hash) Commit(batch entity.Batch) (res []int8, err error) {
 					return
 				}
 				v, _ := c.cache.Get(hs)
-				var tsi int
 				if v == nil {
 					tsi = newtsi
 				} else {
 					tsi, _ = strconv.Atoi(v.(string))
 				}
-				var ts = make([]byte, 8)
 				binary.BigEndian.PutUint64(ts, uint64(tsi))
 				err = ixtxn.Put(c.ixdbi, item.Hash, ts, 0)
 				if err == nil {
@@ -254,6 +271,161 @@ func (c *hash) Commit(batch entity.Batch) (res []int8, err error) {
 			}
 			return
 		})
+		return
+	})
+	if err != nil {
+		// Restore cache on transaction rollback
+		for k, tss := range removedFromCache {
+			c.cache.Add(k, tss, tss)
+		}
+	}
+	return
+}
+
+// SweepExpired deletes expired items
+func (c *hash) SweepExpired(expts []byte, limit int) (maxAge time.Duration, deleted int, err error) {
+	var ts []byte
+	var tss string
+	var keys []byte
+	var lastts = make([]byte, 8)
+	var removedFromHistory = map[string][]byte{}
+
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	err = c.ixenv.Update(func(ixtxn *lmdb.Txn) (err error) {
+		err = c.tsenv.Update(func(tstxn *lmdb.Txn) (err error) {
+			hcur, err := tstxn.OpenCursor(c.tsdbi)
+			if err != nil {
+				return err
+			}
+			defer hcur.Close()
+			for {
+				_, _, err := hcur.Get(nil, nil, lmdb.NextNoDup)
+				if lmdb.IsNotFound(err) {
+					break
+				}
+				if err != nil {
+					return err
+				}
+				ts, keys, err = hcur.Get(nil, nil, lmdb.NextMultiple)
+				if lmdb.IsNotFound(err) || ts == nil {
+					break
+				}
+				if err != nil {
+					return err
+				}
+				if bytes.Compare(ts, expts) > 0 {
+					break
+				}
+				lastts = ts
+				multi := lmdb.WrapMulti(keys, c.keyLen)
+				for i := 0; i < multi.Len(); i++ {
+					err = ixtxn.Del(c.ixdbi, multi.Val(i), ts)
+					if err != nil && !lmdb.IsNotFound(err) {
+						return err
+					}
+				}
+				deleted += multi.Len()
+				tss = strconv.Itoa(int(binary.BigEndian.Uint64(lastts)))
+				removedFromHistory[tss] = keys
+				hcur.Del(lmdb.NoDupData)
+				if limit > 0 && deleted >= limit {
+					break
+				}
+			}
+			maxAge = c.clock.Now().Sub(time.Unix(0, int64(binary.BigEndian.Uint64(lastts))))
+			return
+		})
+		return
+	})
+	if err != nil {
+		// Restore history on index transaction failure
+		err := c.tsenv.Update(func(tstxn *lmdb.Txn) (err error) {
+			for tss, k := range removedFromHistory {
+				tsi, _ := strconv.Atoi(tss)
+				binary.BigEndian.PutUint64(ts, uint64(tsi))
+				err = tstxn.Put(c.tsdbi, ts, k, 0)
+				if err != nil {
+					return
+				}
+			}
+			return
+		})
+		if err != nil {
+			err = fmt.Errorf("Rollback failed for error: %s", err.Error())
+		}
+	}
+	return
+}
+
+// SweepLocked deletes items from history if present in lock cache and removes them from lock cache
+// Starts from lock expiration checkpoint and evaluates all keys up to (time - expiration)
+// No limit because it only touches history and in-memory cache. Doesn't affect the set.
+// Cursor reads are sequential (fast)
+func (c *hash) SweepLocked(expts []byte) (scanned int, deleted int, err error) {
+	var v []byte
+	var ts []byte
+	var hs string
+	var tss string
+	var start []byte
+	var lastts = make([]byte, 8)
+	var removedFromCache = map[string]string{}
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	err = c.tsenv.Update(func(tstxn *lmdb.Txn) (err error) {
+		hcur, err := tstxn.OpenCursor(c.tsdbi)
+		if err != nil {
+			return err
+		}
+		defer hcur.Close()
+		start, err = tstxn.Get(c.tsmetadbi, historyLockExpKey)
+		if err != nil && !lmdb.IsNotFound(err) {
+			return err
+		}
+		ts, _, err = hcur.Get(start, nil, 0)
+		if start != nil {
+			// Skip last processed record if we found a checkpoint
+			ts, _, err = hcur.Get(nil, nil, lmdb.NextNoDup)
+		}
+		for {
+			if lmdb.IsNotFound(err) || ts == nil {
+				break
+			}
+			if err != nil {
+				return err
+			}
+			if bytes.Compare(ts, expts) > 0 {
+				break
+			}
+			lastts = ts
+			tss = strconv.Itoa(int(binary.BigEndian.Uint64(ts)))
+			_, keys, err := hcur.Get(nil, nil, lmdb.NextMultiple)
+			if lmdb.IsNotFound(err) {
+				break
+			}
+			if err != nil {
+				return err
+			}
+			multi := lmdb.WrapMulti(keys, c.keyLen)
+			for i := 0; i < multi.Len(); i++ {
+				v = multi.Val(i)
+				hs = string(v)
+				if c.cache.Remove(hs) {
+					err = tstxn.Del(c.tsdbi, ts, v)
+					if err != nil {
+						return err
+					}
+					removedFromCache[hs] = tss
+					deleted++
+				}
+				scanned++
+			}
+			ts, _, err = hcur.Get(nil, nil, lmdb.NextNoDup)
+		}
+		err = tstxn.Put(c.tsmetadbi, historyLockExpKey, lastts, 0)
+		if err != nil {
+			return
+		}
 		return
 	})
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"highvolume.io/shackle/internal/config"
 	"highvolume.io/shackle/internal/entity"
@@ -16,8 +17,10 @@ func RepoFactoryhash(cfg *config.Hash, partition int) (r repo.Hash, err error) {
 }
 
 type RepoHash struct {
-	Closes int
-	mutex  sync.Mutex
+	Closes           int
+	mutex            sync.Mutex
+	SweepExpiredFunc func(exp []byte, limit int) (maxAge time.Duration, deleted int, err error)
+	SweepLockedFunc  func(exp []byte) (total int, deleted int, err error)
 }
 
 func (r *RepoHash) Lock(batch entity.Batch) (res []int8, err error) {
@@ -28,6 +31,18 @@ func (r *RepoHash) Rollback(batch entity.Batch) (res []int8, err error) {
 }
 func (r *RepoHash) Commit(batch entity.Batch) (res []int8, err error) {
 	return r.getRes(batch)
+}
+func (c *RepoHash) SweepExpired(exp []byte, limit int) (maxAge time.Duration, deleted int, err error) {
+	if c.SweepExpiredFunc != nil {
+		return c.SweepExpiredFunc(exp, limit)
+	}
+	return
+}
+func (c *RepoHash) SweepLocked(exp []byte) (total int, deleted int, err error) {
+	if c.SweepLockedFunc != nil {
+		return c.SweepLockedFunc(exp)
+	}
+	return
 }
 func (r *RepoHash) Close() {
 	r.mutex.Lock()

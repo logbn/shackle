@@ -1,7 +1,10 @@
 package service
 
 import (
+	"encoding/binary"
+	"sort"
 	"sync"
+	"time"
 
 	"github.com/benbjohnson/clock"
 
@@ -19,10 +22,15 @@ type Persistence interface {
 }
 
 type persistence struct {
-	clock      clock.Clock
-	partitions int
-	repos      map[int]repo.Hash
-	log        log.Logger
+	clock         clock.Clock
+	partitions    int
+	repos         map[int]repo.Hash
+	log           log.Logger
+	keyExp        time.Duration
+	lockExp       time.Duration
+	sweepInterval time.Duration
+	stopSweepers  chan bool
+	repoMutex     sync.RWMutex
 }
 
 // NewPersistence returns a persistence service
@@ -38,7 +46,17 @@ func NewPersistence(cfg *config.Hash, rfh repo.FactoryHash, log log.Logger) (r *
 		}
 	}
 
-	return &persistence{clock.New(), partitions, repos, log}, nil
+	return &persistence{
+		clock.New(),
+		partitions,
+		repos,
+		log,
+		cfg.KeyExpiration,
+		cfg.LockExpiration,
+		cfg.SweepInterval,
+		nil,
+		sync.RWMutex{},
+	}, nil
 }
 
 // Lock determines whether each hash has been seen and locks for processing
@@ -48,6 +66,9 @@ func (c persistence) Lock(batch entity.Batch) (res []int8, err error) {
 	res = make([]int8, len(batch))
 	var wg sync.WaitGroup
 	var mutex sync.Mutex
+	c.repoMutex.RLock()
+	defer c.repoMutex.RUnlock()
+
 	for k, batch := range batch.Partitioned(c.partitions) {
 		wg.Add(1)
 		go func(k int, batch entity.Batch) {
@@ -78,6 +99,9 @@ func (c persistence) Rollback(batch entity.Batch) (res []int8, err error) {
 	res = make([]int8, len(batch))
 	var wg sync.WaitGroup
 	var mutex sync.Mutex
+	c.repoMutex.RLock()
+	defer c.repoMutex.RUnlock()
+
 	for k, batch := range batch.Partitioned(c.partitions) {
 		wg.Add(1)
 		go func(k int, batch entity.Batch) {
@@ -112,6 +136,9 @@ func (c persistence) Commit(batch entity.Batch) (res []int8, err error) {
 	res = make([]int8, len(batch))
 	var wg sync.WaitGroup
 	var mutex sync.Mutex
+	c.repoMutex.RLock()
+	defer c.repoMutex.RUnlock()
+
 	for k, batch := range batch.Partitioned(c.partitions) {
 		wg.Add(1)
 		go func(k int, batch entity.Batch) {
@@ -137,9 +164,81 @@ func (c persistence) Commit(batch entity.Batch) (res []int8, err error) {
 	return
 }
 
+// StartSweepers starts background sweepers
+func (c persistence) StartSweepers() {
+	if c.sweepInterval < 1 || c.stopSweepers != nil {
+		return
+	}
+	c.stopSweepers = make(chan bool)
+	var ticker = c.clock.Ticker(c.sweepInterval)
+	go func() {
+		var i int
+		var t time.Time
+		var keyexpts = make([]byte, 8)
+		var lockexpts = make([]byte, 8)
+		for {
+			select {
+			case <-ticker.C:
+				c.repoMutex.RLock()
+				// Sorting repos and using consistent timestamp across repos produces more uniform metrics
+				// Iterating over a map randomly every tick results in noisy scan, deletion and abandonment metrics
+				// Repos are sorted on every iteration because shard balancing could change the list
+				t = c.clock.Now()
+				binary.BigEndian.PutUint32(keyexpts, uint32(t.Add(-1*c.keyExp).Unix()))
+				binary.BigEndian.PutUint32(lockexpts, uint32(t.Add(-1*c.lockExp).Unix()))
+				var sorted = make([]int, len(c.repos))
+				sort.Ints(sorted)
+				i = 0
+				for k := range c.repos {
+					sorted[i] = k
+					i++
+				}
+				for k := range sorted {
+					if c.keyExp > 0 {
+						// TODO - create expiration sweep limit oracle
+						maxAge, deleted, err := c.repos[k].SweepExpired(keyexpts, 0)
+						if err != nil {
+							// monitor error
+							c.log.Error(err.Error())
+						} else {
+							// provide deleted and maxAge to expiration sweep limit oracle
+							// monitor deletion rate
+							_ = deleted
+							// monitor maxage
+							_ = maxAge
+						}
+					}
+					if c.lockExp > 0 {
+						scanned, abandoned, err := c.repos[k].SweepLocked(lockexpts)
+						if err != nil {
+							// monitor error
+							c.log.Error(err.Error())
+						} else {
+							// provide scan rate to expiration sweep limit oracle
+							// monitor scan rate
+							_ = scanned
+							// monitor abandonment
+							_ = abandoned
+						}
+					}
+				}
+				c.repoMutex.RUnlock()
+			case <-c.stopSweepers:
+				ticker.Stop()
+				c.stopSweepers = nil
+				return
+			}
+		}
+	}()
+	return
+}
+
 // Close the repos
 func (c persistence) Close() {
 	for _, r := range c.repos {
 		r.Close()
+	}
+	if c.stopSweepers != nil {
+		c.stopSweepers <- true
 	}
 }

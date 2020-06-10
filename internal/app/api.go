@@ -11,9 +11,10 @@ import (
 )
 
 type Api struct {
-	log    log.Logger
-	server *fasthttp.Server
-	port   string
+	log            log.Logger
+	server         *fasthttp.Server
+	svcPersistence service.Persistence
+	port           string
 }
 
 func NewApi(cfg config.App, log log.Logger) *Api {
@@ -37,7 +38,7 @@ func NewApi(cfg config.App, log log.Logger) *Api {
 		MaxConnsPerIP:         cfg.Api.Http.MaxConnsPerIP,
 		NoDefaultServerHeader: true,
 	}
-	return &Api{log, server, cfg.Api.Http.Port}
+	return &Api{log, server, svcPersistence, cfg.Api.Http.Port}
 }
 
 func (a Api) Start() {
@@ -46,4 +47,5 @@ func (a Api) Start() {
 }
 
 func (a Api) Stop() {
+	a.svcPersistence.Close()
 }
