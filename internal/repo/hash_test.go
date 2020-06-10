@@ -262,6 +262,13 @@ func TestHash(t *testing.T) {
 		require.Nil(t, err)
 		assert.Len(t, res, 0)
 	})
+	t.Run("restoreHistory", func(t *testing.T) {
+		err := repo.(*hash).restoreHistory(map[string][]byte{
+			"00000000": []byte("0000000000000070"+"0000000000000071"),
+			"00000001": []byte("0000000000000072"+"0000000000000073"),
+		}, fmt.Errorf("orig"))
+		assert.Equal(t, "orig", err.Error())
+	})
 }
 
 // SweepLocked

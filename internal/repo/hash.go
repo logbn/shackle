@@ -285,7 +285,6 @@ func (c *hash) Commit(batch entity.Batch) (res []int8, err error) {
 // SweepExpired deletes expired items
 func (c *hash) SweepExpired(expts []byte, limit int) (maxAge time.Duration, deleted int, err error) {
 	var v []byte
-	var ts []byte
 	var tss string
 	var keys []byte
 	var lastts = make([]byte, 8)
@@ -344,21 +343,28 @@ func (c *hash) SweepExpired(expts []byte, limit int) (maxAge time.Duration, dele
 		return
 	})
 	if err != nil {
-		// Restore history on index transaction failure
-		err := c.tsenv.Update(func(tstxn *lmdb.Txn) (err error) {
-			for tss, k := range removedFromHistory {
-				tsi, _ := strconv.Atoi(tss)
-				binary.BigEndian.PutUint64(ts, uint64(tsi))
-				err = tstxn.Put(c.tsdbi, ts, k, 0)
-				if err != nil {
-					return
-				}
+		err = c.restoreHistory(removedFromHistory, err)
+	}
+	return
+}
+
+// Restore history on index transaction failure
+func (c *hash) restoreHistory(removedFromHistory map[string][]byte, origErr error) (err error) {
+	var ts = make([]byte, 8)
+	err = origErr
+	err2 := c.tsenv.Update(func(tstxn *lmdb.Txn) (err error) {
+		for tss, k := range removedFromHistory {
+			tsi, _ := strconv.Atoi(tss)
+			binary.BigEndian.PutUint64(ts, uint64(tsi))
+			err = tstxn.Put(c.tsdbi, ts, k, 0)
+			if err != nil {
+				return
 			}
-			return
-		})
-		if err != nil {
-			err = fmt.Errorf("Rollback failed for error: %s", err.Error())
 		}
+		return
+	})
+	if err2 != nil {
+		err = fmt.Errorf("Rollback failed: %s for error: %s", err2.Error(), err.Error())
 	}
 	return
 }
