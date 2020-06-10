@@ -390,7 +390,6 @@ func TestHashSweepExpired(t *testing.T) {
 	var keyExpts = make([]byte, 8)
 	var keyExp = 24 * time.Hour
 	var res []int8
-	clk.Set(time.Now())
 	repo.(*hash).clock = clk
 
 	t.Run("SweepExpired", func(t *testing.T) {

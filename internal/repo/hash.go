@@ -25,7 +25,8 @@ var (
 	lmdbtsdbiopt   = lmdb.DupSort | lmdb.DupFixed | lmdb.Create
 	lmdbmetadbiopt = lmdb.Create
 
-	historyLockExpKey = []byte("LOCK_EXPIRATION")
+	chkHead = []byte("CHECKPOINT_HEAD")
+	chkTail = []byte("CHECKPOINT_TAIL")
 )
 
 // FactoryHash is a factory that returns a hash repository
@@ -344,7 +345,12 @@ func (c *hash) SweepExpired(expts []byte, limit int) (maxAge time.Duration, dele
 	})
 	if err != nil {
 		err = c.restoreHistory(removedFromHistory, err)
+		return
 	}
+	err = c.ixenv.Update(func(ixtxn *lmdb.Txn) (err error) {
+		err = ixtxn.Put(c.ixmetadbi, chkTail, lastts, 0)
+		return
+	})
 	return
 }
 
@@ -389,7 +395,7 @@ func (c *hash) SweepLocked(expts []byte) (scanned int, deleted int, err error) {
 			return err
 		}
 		defer hcur.Close()
-		start, err = tstxn.Get(c.tsmetadbi, historyLockExpKey)
+		start, err = tstxn.Get(c.tsmetadbi, chkHead)
 		if err != nil && !lmdb.IsNotFound(err) {
 			return err
 		}
@@ -438,7 +444,7 @@ func (c *hash) SweepLocked(expts []byte) (scanned int, deleted int, err error) {
 			}
 			ts, _, err = hcur.Get(nil, nil, lmdb.NextNoDup)
 		}
-		err = tstxn.Put(c.tsmetadbi, historyLockExpKey, lastts, 0)
+		err = tstxn.Put(c.tsmetadbi, chkHead, lastts, 0)
 		if err != nil {
 			return
 		}
@@ -449,7 +455,12 @@ func (c *hash) SweepLocked(expts []byte) (scanned int, deleted int, err error) {
 		for k, tss := range removedFromCache {
 			c.cache.Add(k, tss, tss)
 		}
+		return
 	}
+	err = c.ixenv.Update(func(ixtxn *lmdb.Txn) (err error) {
+		err = ixtxn.Put(c.ixmetadbi, chkHead, lastts, 0)
+		return
+	})
 	return
 }
 
