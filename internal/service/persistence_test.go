@@ -2,10 +2,13 @@ package service
 
 import (
 	"fmt"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/benbjohnson/clock"
 
 	"highvolume.io/shackle/internal/config"
 	"highvolume.io/shackle/internal/entity"
@@ -146,4 +149,93 @@ func TestPersistence(t *testing.T) {
 	for _, repo := range svc.repos {
 		assert.Equal(t, 1, repo.(*mock.RepoHash).Closes)
 	}
+}
+
+func TestPersistenceSweep(t *testing.T) {
+	var sweepExpiredCalls int
+	var sweepLockedCalls int
+	var mutex sync.Mutex
+	var expiredErr error
+	var lockedErr error
+	logger := &mock.Logger{}
+	svc, err := NewPersistence(&config.Hash{
+		Partitions: 4,
+		SweepInterval: time.Second,
+		KeyExpiration: 10 * time.Second,
+		LockExpiration: 10 * time.Second,
+	}, func(cfg *config.Hash, partition int) (r repo.Hash, err error) {
+		r = &mock.RepoHash{
+			SweepExpiredFunc: func(exp []byte, limit int) (maxAge time.Duration, deleted int, err error) {
+				mutex.Lock()
+				defer mutex.Unlock()
+				sweepExpiredCalls++
+				err = expiredErr
+				return
+			},
+			SweepLockedFunc: func(exp []byte) (total int, deleted int, err error) {
+				mutex.Lock()
+				defer mutex.Unlock()
+				sweepLockedCalls++
+				err = lockedErr
+				return
+			},
+		}
+		return
+	}, logger)
+	require.Nil(t, err)
+	require.NotNil(t, svc)
+	assert.Equal(t, 4, len(svc.repos))
+	clk := clock.NewMock()
+	svc.clock = clk
+
+	mlock := func(fn func()) {
+		mutex.Lock()
+		defer mutex.Unlock()
+		fn()
+	}
+
+	t.Run("Sweep Success", func(t *testing.T) {
+		svc.StartSweepers()
+
+		clk.Add(time.Second)
+		mlock(func(){
+			assert.Equal(t, 4, sweepExpiredCalls)
+			assert.Equal(t, 4, sweepLockedCalls)
+		})
+
+		svc.StopSweepers()
+		mlock(func(){
+			svc.sweepInterval = 0
+			sweepExpiredCalls = 0
+			sweepLockedCalls = 0
+		})
+		svc.StartSweepers()
+
+		clk.Add(time.Second)
+		mlock(func(){
+			assert.Equal(t, 0, sweepExpiredCalls)
+			assert.Equal(t, 0, sweepLockedCalls)
+		})
+		svc.StopSweepers()
+	})
+
+	t.Run("Sweep Error", func(t *testing.T) {
+		svc.sweepInterval = time.Second
+		svc.StartSweepers()
+		mlock(func(){
+			expiredErr = fmt.Errorf("test")
+		})
+		assert.Equal(t, 0, len(logger.GetErrors()))
+		clk.Add(time.Second)
+		assert.Equal(t, 4, len(logger.GetErrors()))
+
+		mlock(func(){
+			lockedErr = fmt.Errorf("test")
+		})
+		clk.Add(time.Second)
+		assert.Equal(t, 12, len(logger.GetErrors()))
+		svc.StopSweepers()
+	})
+
+	svc.Close()
 }

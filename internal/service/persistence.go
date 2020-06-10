@@ -18,6 +18,8 @@ type Persistence interface {
 	Lock(batch entity.Batch) (res []int8, err error)
 	Rollback(batch entity.Batch) (res []int8, err error)
 	Commit(batch entity.Batch) (res []int8, err error)
+	StartSweepers()
+	StopSweepers()
 	Close()
 }
 
@@ -62,7 +64,7 @@ func NewPersistence(cfg *config.Hash, rfh repo.FactoryHash, log log.Logger) (r *
 // Lock determines whether each hash has been seen and locks for processing
 // Locks have a set expiration (default 30s). Items are unlocked after this timeout expires.
 // Lock abandonment is measured and exposed as a metric.
-func (c persistence) Lock(batch entity.Batch) (res []int8, err error) {
+func (c *persistence) Lock(batch entity.Batch) (res []int8, err error) {
 	res = make([]int8, len(batch))
 	var wg sync.WaitGroup
 	var mutex sync.Mutex
@@ -95,7 +97,7 @@ func (c persistence) Lock(batch entity.Batch) (res []int8, err error) {
 }
 
 // Rollback determines whether each hash has been seen and locks for processing
-func (c persistence) Rollback(batch entity.Batch) (res []int8, err error) {
+func (c *persistence) Rollback(batch entity.Batch) (res []int8, err error) {
 	res = make([]int8, len(batch))
 	var wg sync.WaitGroup
 	var mutex sync.Mutex
@@ -132,7 +134,7 @@ func (c persistence) Rollback(batch entity.Batch) (res []int8, err error) {
 // A commit against an existing item will not indicate whether the item already existed.
 // Commit volume against existing items is measured and exposed as a metric.
 // The only way to read the state of an item is to acquire a lock.
-func (c persistence) Commit(batch entity.Batch) (res []int8, err error) {
+func (c *persistence) Commit(batch entity.Batch) (res []int8, err error) {
 	res = make([]int8, len(batch))
 	var wg sync.WaitGroup
 	var mutex sync.Mutex
@@ -165,7 +167,7 @@ func (c persistence) Commit(batch entity.Batch) (res []int8, err error) {
 }
 
 // StartSweepers starts background sweepers
-func (c persistence) StartSweepers() {
+func (c *persistence) StartSweepers() {
 	if c.sweepInterval < 1 || c.stopSweepers != nil {
 		return
 	}
@@ -225,7 +227,6 @@ func (c persistence) StartSweepers() {
 				c.repoMutex.RUnlock()
 			case <-c.stopSweepers:
 				ticker.Stop()
-				c.stopSweepers = nil
 				return
 			}
 		}
@@ -233,12 +234,18 @@ func (c persistence) StartSweepers() {
 	return
 }
 
-// Close the repos
-func (c persistence) Close() {
-	for _, r := range c.repos {
-		r.Close()
-	}
+// Stops sweepers
+func (c *persistence) StopSweepers() {
 	if c.stopSweepers != nil {
 		c.stopSweepers <- true
+		c.stopSweepers = nil
+	}
+}
+
+// Close the repos
+func (c *persistence) Close() {
+	c.StopSweepers()
+	for _, r := range c.repos {
+		r.Close()
 	}
 }

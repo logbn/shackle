@@ -71,3 +71,24 @@ func (l *Logger) Reset() {
 	l.Infos = []string{}
 	l.Debugs = []string{}
 }
+// Thread safe record accessors
+func (l *Logger) GetErrors() []string {
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+	return l.Errors
+}
+func (l *Logger) GetWarns() []string {
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+	return l.Warns
+}
+func (l *Logger) GetInfos() []string {
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+	return l.Infos
+}
+func (l *Logger) GetDebugs() []string {
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+	return l.Debugs
+}
