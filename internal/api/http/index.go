@@ -7,6 +7,8 @@ import (
 )
 
 // Index serves the API's index page
-func Index(ctx *fasthttp.RequestCtx) {
-	fmt.Fprint(ctx, "Welcome!\n")
+type Index struct{}
+
+func (c *Index) ServeFastHTTP(ctx *fasthttp.RequestCtx) {
+	fmt.Fprint(ctx, "Welcome!")
 }

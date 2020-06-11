@@ -13,13 +13,14 @@ func NewRouter(
 	svcPersistence service.Persistence,
 ) *router.Router {
 	var (
+		index    = Index{}
 		lock     = Lock{svcPersistence}
 		rollback = Rollback{svcPersistence}
 		commit   = Commit{svcPersistence}
 	)
 
 	r := router.New()
-	r.GET("/", Index)
+	r.GET("/", index.ServeFastHTTP)
 	r.POST("/lock", lock.ServeFastHTTP)
 	r.POST("/rollback", rollback.ServeFastHTTP)
 	r.POST("/commit", commit.ServeFastHTTP)

@@ -8,6 +8,7 @@ type App struct {
 	Api  Api  `yaml:"api"`
 	Data Data `yaml:"data"`
 	Repo Repo `yaml:"repo"`
+	Raft Raft `yaml:"raft"`
 	Log  Log  `yaml:"log"`
 }
 
@@ -31,23 +32,33 @@ type Data struct {
 	Port int `yaml:"port"`
 }
 
-type Repo struct {
-	Hash *Hash `yaml:"hash"`
+type Raft struct {
+	ClusterID string `yaml:"clusterid"`
+	NodeID    string `yaml:"nodeid"`
+	Port      int    `yaml:"port"`
+	Join      string `yaml:"join"`
 }
 
-type Hash struct {
-	IndexPath      string        `yaml:"ixpath"`
-	TimeseriesPath string        `yaml:"tspath"`
-	Partitions     int           `yaml:"partitions"`
-	Replicas       int           `yaml:"replicas"`
-	Surrogates     int           `yaml:"surrogates"`
-	KeyLength      int           `yaml:"length"`
-	KeyExpiration  time.Duration `yaml:"key_expiration"`
-	LockExpiration time.Duration `yaml:"lock_expiration"`
-	SweepInterval  time.Duration `yaml:"sweep_interval"`
+type Repo struct {
+	Hash *RepoHash `yaml:"hash"`
+}
+
+type RepoHash struct {
 	CacheSize      int           `yaml:"cachesize"`
+	IndexPath      string        `yaml:"ixpath"`
+	KeyExpiration  time.Duration `yaml:"key_expiration"`
+	KeyLength      int           `yaml:"length"`
+	LockExpiration time.Duration `yaml:"lock_expiration"`
+	Partitions     int           `yaml:"partitions"`
+	SweepInterval  time.Duration `yaml:"sweep_interval"`
+	TimeseriesPath string        `yaml:"tspath"`
 }
 
 type Log struct {
 	Level string `yaml:"level"`
+}
+
+type Cluster struct {
+	Replicas   int `yaml:"replicas"`
+	Surrogates int `yaml:"surrogates"`
 }

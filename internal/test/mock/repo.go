@@ -11,7 +11,7 @@ import (
 	"highvolume.io/shackle/internal/repo"
 )
 
-func RepoFactoryhash(cfg *config.Hash, partition int) (r repo.Hash, err error) {
+func RepoFactoryhash(cfg *config.RepoHash, partition int) (r repo.Hash, err error) {
 	r = &RepoHash{}
 	return
 }

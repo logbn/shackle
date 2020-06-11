@@ -44,8 +44,11 @@ func TestBatchFromJson(t *testing.T) {
 }
 
 func TestBatchResponseToJson(t *testing.T) {
-	out, err := BatchResponseToJson([]int8{ITEM_OPEN, ITEM_EXISTS, ITEM_LOCKED, ITEM_BUSY, ITEM_ERROR})
-	require.Nil(t, err)
+	out := BatchResponseToJson([]int8{ITEM_OPEN, ITEM_EXISTS, ITEM_LOCKED, ITEM_BUSY, ITEM_ERROR})
 	require.NotNil(t, out)
 	assert.Equal(t, `[0,1,2,3,4]`, string(out))
+
+	out = BatchResponseToJson([]int8{})
+	require.NotNil(t, out)
+	assert.Equal(t, `[]`, string(out))
 }

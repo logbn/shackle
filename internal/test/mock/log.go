@@ -71,6 +71,7 @@ func (l *Logger) Reset() {
 	l.Infos = []string{}
 	l.Debugs = []string{}
 }
+
 // Thread safe record accessors
 func (l *Logger) GetErrors() []string {
 	l.mutex.Lock()

@@ -22,14 +22,14 @@ func TestNewHash(t *testing.T) {
 	os.RemoveAll(fakedir)
 	os.MkdirAll(realdir, 0777)
 	t.Run("NonExistantDatabase", func(t *testing.T) {
-		_, err := NewHash(&config.Hash{
+		_, err := NewHash(&config.RepoHash{
 			IndexPath:      realdir,
 			TimeseriesPath: fakedir,
 			CacheSize:      1000,
 			Partitions:     1,
 		}, 0)
 		require.True(t, os.IsNotExist(err))
-		_, err = NewHash(&config.Hash{
+		_, err = NewHash(&config.RepoHash{
 			IndexPath:      fakedir,
 			TimeseriesPath: realdir,
 			CacheSize:      1000,
@@ -38,7 +38,7 @@ func TestNewHash(t *testing.T) {
 		require.True(t, os.IsNotExist(err))
 	})
 	t.Run("Success", func(t *testing.T) {
-		_, err := NewHash(&config.Hash{
+		_, err := NewHash(&config.RepoHash{
 			IndexPath:      realdir,
 			TimeseriesPath: realdir,
 			CacheSize:      1000,
@@ -54,7 +54,7 @@ func TestHash(t *testing.T) {
 	tmpdir := os.TempDir() + "/shackletest/lmdb"
 	os.RemoveAll(tmpdir)
 	os.MkdirAll(tmpdir, 0777)
-	repo, err := NewHash(&config.Hash{
+	repo, err := NewHash(&config.RepoHash{
 		IndexPath:      tmpdir,
 		TimeseriesPath: tmpdir,
 		CacheSize:      1000,
@@ -264,8 +264,8 @@ func TestHash(t *testing.T) {
 	})
 	t.Run("restoreHistory", func(t *testing.T) {
 		err := repo.(*hash).restoreHistory(map[string][]byte{
-			"00000000": []byte("0000000000000070"+"0000000000000071"),
-			"00000001": []byte("0000000000000072"+"0000000000000073"),
+			"00000000": []byte("0000000000000070" + "0000000000000071"),
+			"00000001": []byte("0000000000000072" + "0000000000000073"),
 		}, fmt.Errorf("orig"))
 		assert.Equal(t, "orig", err.Error())
 	})
@@ -276,7 +276,7 @@ func TestHashSweepLocked(t *testing.T) {
 	tmpdir := os.TempDir() + "/shackletest/lmdbsweeplocked"
 	os.RemoveAll(tmpdir)
 	os.MkdirAll(tmpdir, 0777)
-	repo, err := NewHash(&config.Hash{
+	repo, err := NewHash(&config.RepoHash{
 		IndexPath:      tmpdir,
 		TimeseriesPath: tmpdir,
 		CacheSize:      1000,
@@ -357,7 +357,7 @@ func TestHashSweepLocked(t *testing.T) {
 		// Sweep batch of 1000
 		items = make(entity.Batch, 1000)
 		for i := 0; i < 1000; i++ {
-			items[i] = entity.BatchItem{0, []byte("BIGBATCH0000"+fmt.Sprintf("%04d", i))}
+			items[i] = entity.BatchItem{0, []byte("BIGBATCH0000" + fmt.Sprintf("%04d", i))}
 		}
 		res, err = repo.Lock(items)
 		require.Nil(t, err)
@@ -378,7 +378,7 @@ func TestHashSweepExpired(t *testing.T) {
 	tmpdir := os.TempDir() + "/shackletest/lmdbsweepexpired"
 	os.RemoveAll(tmpdir)
 	os.MkdirAll(tmpdir, 0777)
-	repo, err := NewHash(&config.Hash{
+	repo, err := NewHash(&config.RepoHash{
 		IndexPath:      tmpdir,
 		TimeseriesPath: tmpdir,
 		CacheSize:      1000,
@@ -459,7 +459,7 @@ func TestHashSweepExpired(t *testing.T) {
 		// Sweep batch of 1000
 		items = make(entity.Batch, 1000)
 		for i := 0; i < 1000; i++ {
-			items[i] = entity.BatchItem{0, []byte("BIGBATCH0000"+fmt.Sprintf("%04d", i))}
+			items[i] = entity.BatchItem{0, []byte("BIGBATCH0000" + fmt.Sprintf("%04d", i))}
 		}
 		res, err = repo.Commit(items)
 		require.Nil(t, err)
@@ -480,7 +480,7 @@ func TestHashClose(t *testing.T) {
 	tmpdir := os.TempDir() + "/shackletest/lmdbclose"
 	os.RemoveAll(tmpdir)
 	os.MkdirAll(tmpdir, 0777)
-	repo, err := NewHash(&config.Hash{
+	repo, err := NewHash(&config.RepoHash{
 		IndexPath:      tmpdir,
 		TimeseriesPath: tmpdir,
 		CacheSize:      1000,

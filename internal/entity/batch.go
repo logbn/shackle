@@ -62,7 +62,10 @@ func BatchFromJson(body []byte) (ent Batch, err error) {
 	return
 }
 
-func BatchResponseToJson(res []int8) (out []byte, err error) {
+func BatchResponseToJson(res []int8) (out []byte) {
+	if len(res) == 0 {
+		return []byte("[]")
+	}
 	out = make([]byte, len(res)*2+1)
 	out[0] = byte('[')
 	for i, c := range res {

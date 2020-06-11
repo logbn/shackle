@@ -30,11 +30,7 @@ func (c *Lock) ServeFastHTTP(ctx *fasthttp.RequestCtx) {
 		fmt.Fprintf(ctx, err.Error())
 		return
 	}
-	out, err := entity.BatchResponseToJson(res)
-	if err != nil {
-		ctx.Response.SetStatusCode(500)
-		fmt.Fprintf(ctx, err.Error())
-		return
-	}
+	out := entity.BatchResponseToJson(res)
+
 	fmt.Fprintf(ctx, "%s", out)
 }

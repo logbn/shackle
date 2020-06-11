@@ -30,7 +30,7 @@ var (
 )
 
 // FactoryHash is a factory that returns a hash repository
-type FactoryHash func(cfg *config.Hash, partition int) (r Hash, err error)
+type FactoryHash func(cfg *config.RepoHash, partition int) (r Hash, err error)
 
 // Hash is a primary hash repository
 type Hash interface {
@@ -58,7 +58,7 @@ type hash struct {
 }
 
 // NewHash returns a hash respository
-func NewHash(cfg *config.Hash, partition int) (r Hash, err error) {
+func NewHash(cfg *config.RepoHash, partition int) (r Hash, err error) {
 	var h string
 	var (
 		partitions = cfg.Partitions

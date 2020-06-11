@@ -36,7 +36,7 @@ type persistence struct {
 }
 
 // NewPersistence returns a persistence service
-func NewPersistence(cfg *config.Hash, rfh repo.FactoryHash, log log.Logger) (r *persistence, err error) {
+func NewPersistence(cfg *config.RepoHash, rfh repo.FactoryHash, log log.Logger) (r *persistence, err error) {
 	var (
 		partitions = cfg.Partitions
 		repos      = map[int]repo.Hash{}
