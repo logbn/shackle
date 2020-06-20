@@ -1,13 +1,8 @@
 VERSION := $(shell git describe --tags)
 HASH := $(shell git rev-parse --short HEAD)
-PROJECTNAME := $(shell basename "$(PWD)")
+PROJECTNAME := shackle
 
 LDFLAGS := -ldflags "-X 'main.Version=$(VERSION)' -X 'main.Hash=$(HASH)'"
-
-AZ := $(shell curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone)
-REGION := $(shell curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone | rev | cut -c 2- | rev)
-
-AWS_DEFAULT_REGION := $(REGION)
 
 clean:
 	rm -rf ./dist/*
