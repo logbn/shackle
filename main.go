@@ -13,10 +13,10 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"highvolume.io/shackle/internal/app"
-	"highvolume.io/shackle/internal/config"
-	"highvolume.io/shackle/internal/log"
-	"highvolume.io/shackle/internal/version"
+	"highvolume.io/shackle/app"
+	"highvolume.io/shackle/config"
+	"highvolume.io/shackle/log"
+	"highvolume.io/shackle/version"
 )
 
 var config_path = flag.String("c", "config.yml", "Location of config file(s)")
@@ -58,13 +58,13 @@ func main() {
 			}
 			// App Startup
 			var (
-				api *app.Api
+				cluster *app.Cluster
 			)
 
-			if cfg.Api.Enabled {
-				api = app.NewApi(cfg, logger)
-				logger.Infof("Starting API %d", i)
-				api.Start()
+			if cfg.Cluster.Enabled {
+				cluster = app.NewCluster(cfg, logger)
+				logger.Infof("Starting Cluster Node %d", i)
+				cluster.Start()
 			}
 
 			started <- true
@@ -72,9 +72,9 @@ func main() {
 			<-shutdown
 
 			// App Shutdown
-			if api != nil {
-				logger.Infof("Stopping API %d", i)
-				api.Stop()
+			if cluster != nil {
+				logger.Infof("Stopping Cluster Node %d", i)
+				cluster.Stop()
 			}
 			logger.Infoln("Done")
 			wg.Done()

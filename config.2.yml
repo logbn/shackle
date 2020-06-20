@@ -16,27 +16,35 @@ api:
   grpc:
     port: 9091
 
-raft:
-  clusterid: test
-  nodeid: 2
-  port: 4719
-  join: 127.0.0.1:4709
+cluster:
+  enabled: true
+  id: test
+  partitions: 64
+  raft:
+    node_id: 1
+    port: 4719
+    join: 127.0.0.1:4709
+  replicas: 3
+  surrogates: 1
 
 data:
   port: 4718
-  pepper: pepper
+  pepper: sriracha
+  keylength: 16
 
 repo:
   hash:
-    ixpath: /data/node2
-    tspath: /data/node2
-    partitions: 64
-    replicas: 3
-    surrogates: 1
-    length: 16
-    keysize: 8
+    cachesize: 100000
+    expiration_batch_size: 1000
     key_expiration: 730h
     lock_expiration: 30s
+    path_ix: /data/node2
+    path_ts: /data/node2
     sweep_interval: 1s
-    expiration_limit: 1000
-    cachesize: 100000
+
+monitor:
+  prometheus:
+    port: 9101
+  log:
+    enabled: true
+    level: info

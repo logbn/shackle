@@ -8,8 +8,10 @@ require (
 	github.com/fasthttp/router v1.1.6
 	github.com/kevburnsjr/tci-lru v0.0.0-20190725165011-4be840d4dd55
 	github.com/onrik/logrus v0.5.1
+	github.com/prometheus/client_golang v1.7.0
+	github.com/prometheus/common v0.10.0
 	github.com/sirupsen/logrus v1.6.0
-	github.com/stretchr/testify v1.2.2
+	github.com/stretchr/testify v1.4.0
 	github.com/tidwall/gjson v1.6.0 // indirect
 	github.com/valyala/fasthttp v1.14.0
 	github.com/valyala/fastjson v1.5.1
