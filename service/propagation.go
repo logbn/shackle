@@ -12,7 +12,7 @@ type Propagation interface {
 type propagation struct {
 }
 
-// NewPropagation returns a hash service
+// NewPropagation returns a propagation service
 func NewPropagation(cfg *config.App) (r *propagation, err error) {
 	return &propagation{}, nil
 }

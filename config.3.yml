@@ -28,9 +28,10 @@ cluster:
     join: 127.0.0.1:4709
 
 data:
-  port: 4728
-  pepper: sriracha
   keylength: 16
+  partitions: 4096
+  pepper: sriracha
+  port: 4728
 
 repo:
   hash:

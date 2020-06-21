@@ -24,6 +24,7 @@ type node struct {
 	svcDelegation   service.Delegation
 }
 
+// NewNode returns a new node
 func NewNode(
 	cfg config.App,
 	log log.Logger,

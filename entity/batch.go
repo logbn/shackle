@@ -39,7 +39,8 @@ type BatchItem struct {
 func (b Batch) Partitioned(n int) map[int]Batch {
 	batches := make(map[int]Batch)
 	for _, item := range b {
-		// TODO - Get a better
+		// TODO - Implement a bitmasked prefix partition strategy. mod(n) creates poorly ordered partitions.
+		// ex. When using a prefix, splitting a partition requires scanning only the first half the shard.
 		p := int(item.Hash[0]) % n
 		if _, ok := batches[p]; !ok {
 			batches[p] = Batch{}
@@ -49,6 +50,7 @@ func (b Batch) Partitioned(n int) map[int]Batch {
 	return batches
 }
 
+// BatchFromRequest returns a batch given details about an http request
 func BatchFromRequest(body, contentType []byte, bucket []byte, h hasher) (ent Batch, err error) {
 	switch string(contentType) {
 	case "text/json":
@@ -73,6 +75,7 @@ func BatchFromJson(body, bucket []byte, h hasher) (ent Batch, err error) {
 	}
 	values, err := v.Array()
 	if err != nil {
+		err = fmt.Errorf("Invalid: %s", err.Error())
 		return
 	}
 	ent = make(Batch, len(values))

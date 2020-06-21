@@ -12,7 +12,7 @@ type Coordination interface {
 type coordination struct {
 }
 
-// NewCoordination returns a hash service
+// NewCoordination returns a coordination service
 func NewCoordination(cfg *config.App) (r *coordination, err error) {
 	return &coordination{}, nil
 }

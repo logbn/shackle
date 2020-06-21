@@ -13,12 +13,12 @@ type Hash interface {
 	Hash([]byte, []byte) []byte
 }
 
-type svcHash struct {
+type hash struct {
 	hashFunc func([]byte) []byte
 }
 
 // NewHash returns a hash service
-func NewHash(cfg *config.App) (r *svcHash, err error) {
+func NewHash(cfg *config.App) (r *hash, err error) {
 	var hashFunc func([]byte) []byte
 	var (
 		keylen = cfg.Data.KeyLength
@@ -42,10 +42,10 @@ func NewHash(cfg *config.App) (r *svcHash, err error) {
 	} else {
 		return nil, fmt.Errorf("Key length too large %d (max 64)", keylen)
 	}
-	return &svcHash{hashFunc}, nil
+	return &hash{hashFunc}, nil
 }
 
 // Hash takes a byte array and returns a peppered hash
-func (h *svcHash) Hash(item, bucket []byte) (out []byte) {
+func (h *hash) Hash(item, bucket []byte) (out []byte) {
 	return h.hashFunc(append(bucket, item...))
 }

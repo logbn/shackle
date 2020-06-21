@@ -19,10 +19,11 @@ import (
 func TestNewPersistence(t *testing.T) {
 	logger := &mock.Logger{}
 	svc, err := NewPersistence(&config.App{
+		Data: config.Data{
+			Partitions: 4,
+		},
 		Repo: config.Repo{
-			Hash: &config.RepoHash{
-				Partitions: 4,
-			},
+			Hash: &config.RepoHash{},
 		},
 	}, func(cfg *config.RepoHash, partition int) (r repo.Hash, err error) {
 		return nil, fmt.Errorf("asdf")
@@ -34,10 +35,11 @@ func TestNewPersistence(t *testing.T) {
 func TestPersistence(t *testing.T) {
 	logger := &mock.Logger{}
 	svc, err := NewPersistence(&config.App{
+		Data: config.Data{
+			Partitions: 4,
+		},
 		Repo: config.Repo{
-			Hash: &config.RepoHash{
-				Partitions: 4,
-			},
+			Hash: &config.RepoHash{},
 		},
 	}, mock.RepoFactoryhash, logger)
 	require.Nil(t, err)
@@ -167,9 +169,11 @@ func TestPersistenceSweep(t *testing.T) {
 	var lockedErr error
 	logger := &mock.Logger{}
 	svc, err := NewPersistence(&config.App{
+		Data: config.Data{
+			Partitions: 4,
+		},
 		Repo: config.Repo{
 			Hash: &config.RepoHash{
-				Partitions:     4,
 				SweepInterval:  time.Second,
 				KeyExpiration:  10 * time.Second,
 				LockExpiration: 10 * time.Second,

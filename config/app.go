@@ -39,9 +39,10 @@ type Cluster struct {
 }
 
 type Data struct {
-	Port      int    `yaml:"port"`
-	KeyLength int    `yaml:"keylength"`
-	Pepper    string `yaml:"pepper"`
+	KeyLength  int    `yaml:"keylength"`
+	Partitions int    `yaml:"partitions"`
+	Pepper     string `yaml:"pepper"`
+	Port       int    `yaml:"port"`
 }
 
 type Log struct {
@@ -63,7 +64,6 @@ type RepoHash struct {
 	ExpBatchSize   int           `yaml:"expiration_batch_size"`
 	KeyExpiration  time.Duration `yaml:"key_expiration"`
 	LockExpiration time.Duration `yaml:"lock_expiration"`
-	Partitions     int           `yaml:"partitions"`
 	PathIndex      string        `yaml:"path_ix"`
 	PathTimeseries string        `yaml:"path_ts"`
 	SweepInterval  time.Duration `yaml:"sweep_interval"`

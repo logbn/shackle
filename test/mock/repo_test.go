@@ -12,7 +12,7 @@ import (
 )
 
 func TestRepoFactoryhash(t *testing.T) {
-	repo, err := RepoFactoryhash(&config.RepoHash{Partitions: 8}, 0)
+	repo, err := RepoFactoryhash(&config.RepoHash{}, 0)
 	require.Nil(t, err)
 	require.NotNil(t, repo)
 	batch1 := entity.Batch{

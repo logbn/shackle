@@ -12,7 +12,7 @@ type Delegation interface {
 type delegation struct {
 }
 
-// NewDelegation returns a hash service
+// NewDelegation returns a delegation service
 func NewDelegation(cfg *config.App) (r *delegation, err error) {
 	return &delegation{}, nil
 }

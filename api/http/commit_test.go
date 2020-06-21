@@ -7,19 +7,23 @@ import (
 	"github.com/valyala/fasthttp"
 
 	"highvolume.io/shackle/test/mock"
-	"highvolume.io/shackle/test/mock/clustermock"
+	"highvolume.io/shackle/test/mock/mockcluster"
 )
 
 func TestCommit(t *testing.T) {
 	var ctx fasthttp.RequestCtx
 	svc := mock.ServicePersistence{}
-	h := Commit{&clustermock.Node{&svc}, &mock.ServiceHash{}}
+	h := Commit{&mockcluster.Node{&svc}, &mock.ServiceHash{}}
 
-	testJson := func(b []byte) {
+	testJson := func(b []byte, withHdrApp, withHdrID, withHdrType bool) {
 		ctx.Request.Reset()
 		ctx.Response.Reset()
-		ctx.Request.Header.Set("shackle-client-app", "test")
-		ctx.Request.Header.Set("shackle-client-id", "test-1")
+		if withHdrApp {
+			ctx.Request.Header.Set("shackle-client-app", "test")
+		}
+		if withHdrID {
+			ctx.Request.Header.Set("shackle-client-id", "test-1")
+		}
 		ctx.Request.SetRequestURI("/commit")
 		ctx.Request.SetBodyString(string(b))
 		ctx.Request.Header.SetContentType("application/json")
@@ -27,20 +31,37 @@ func TestCommit(t *testing.T) {
 	}
 
 	t.Run("Success", func(t *testing.T) {
-		testJson([]byte(`["a","b","c"]`))
+		testJson([]byte(`["a","b","c"]`), true, true, true)
 		assert.Equal(t, 200, ctx.Response.StatusCode(), ctx.Response.Header.String())
 		assert.Equal(t, "[1,1,1]", string(ctx.Response.Body()))
 	})
-
-	t.Run("Failure", func(t *testing.T) {
-		testJson([]byte(`["a","b","c"`))
+	t.Run("Malformed JSON", func(t *testing.T) {
+		testJson([]byte(`["a","b","c"`), true, true, true)
 		assert.Equal(t, 400, ctx.Response.StatusCode(), ctx.Response.Header.String())
-
-		testJson([]byte(``))
+	})
+	t.Run("Empty Json", func(t *testing.T) {
+		testJson([]byte(``), true, true, true)
 		assert.Equal(t, 400, ctx.Response.StatusCode(), ctx.Response.Header.String())
-
+	})
+	t.Run("No Content Type", func(t *testing.T) {
+		testJson([]byte(`["a","b","c"`), true, true, false)
+		assert.Equal(t, 400, ctx.Response.StatusCode(), ctx.Response.Header.String())
+	})
+	t.Run("No app or id header", func(t *testing.T) {
+		testJson([]byte(`["a","b","c"]`), false, false, true)
+		assert.Equal(t, 401, ctx.Response.StatusCode(), ctx.Response.Header.String())
+	})
+	t.Run("No app header", func(t *testing.T) {
+		testJson([]byte(`["a","b","c"]`), false, true, true)
+		assert.Equal(t, 401, ctx.Response.StatusCode(), ctx.Response.Header.String())
+	})
+	t.Run("No id header", func(t *testing.T) {
+		testJson([]byte(`["a","b","c"]`), true, false, true)
+		assert.Equal(t, 401, ctx.Response.StatusCode(), ctx.Response.Header.String())
+	})
+	t.Run("Persistence Error", func(t *testing.T) {
 		// Mock returns err w/ batch size 7
-		testJson([]byte(`["a","b","c","d","e","f","g"]`))
+		testJson([]byte(`["a","b","c","d","e","f","g"]`), true, true, true)
 		assert.Equal(t, 500, ctx.Response.StatusCode(), ctx.Response.Header.String())
 	})
 }

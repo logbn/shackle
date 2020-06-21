@@ -60,8 +60,6 @@ type hash struct {
 func NewHash(cfg *config.RepoHash, partition int) (r Hash, err error) {
 	var h string
 	var (
-		partitions = cfg.Partitions
-
 		ixenv     *lmdb.Env
 		tsenv     *lmdb.Env
 		ixdbi     lmdb.DBI
@@ -75,7 +73,7 @@ func NewHash(cfg *config.RepoHash, partition int) (r Hash, err error) {
 	if _, err = os.Stat(cfg.PathTimeseries); os.IsNotExist(err) {
 		return
 	}
-	b := byte(partition % partitions)
+	b := byte(partition)
 	h = hex.EncodeToString([]byte{b})
 	var mkdb = func(path string, envopt, dbopt int, name string) (env *lmdb.Env, db lmdb.DBI, chkdb lmdb.DBI, err error) {
 		os.MkdirAll(path, 0777)

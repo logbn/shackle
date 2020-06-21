@@ -26,14 +26,12 @@ func TestNewHash(t *testing.T) {
 			PathIndex:      realdir,
 			PathTimeseries: fakedir,
 			CacheSize:      1000,
-			Partitions:     1,
 		}, 0)
 		require.True(t, os.IsNotExist(err))
 		_, err = NewHash(&config.RepoHash{
 			PathIndex:      fakedir,
 			PathTimeseries: realdir,
 			CacheSize:      1000,
-			Partitions:     1,
 		}, 0)
 		require.True(t, os.IsNotExist(err))
 	})
@@ -42,7 +40,6 @@ func TestNewHash(t *testing.T) {
 			PathIndex:      realdir,
 			PathTimeseries: realdir,
 			CacheSize:      1000,
-			Partitions:     1,
 		}, 0)
 		require.Nil(t, err)
 	})
@@ -58,7 +55,6 @@ func TestHash(t *testing.T) {
 		PathIndex:      tmpdir,
 		PathTimeseries: tmpdir,
 		CacheSize:      1000,
-		Partitions:     1,
 	}, 0)
 	require.Nil(t, err)
 	repo.(*hash).clock = clk
@@ -280,7 +276,6 @@ func TestHashSweepLocked(t *testing.T) {
 		PathIndex:      tmpdir,
 		PathTimeseries: tmpdir,
 		CacheSize:      1000,
-		Partitions:     1,
 	}, 0)
 	require.Nil(t, err)
 	var clk = clock.NewMock()
@@ -381,7 +376,6 @@ func TestHashSweepExpired(t *testing.T) {
 		PathIndex:      tmpdir,
 		PathTimeseries: tmpdir,
 		CacheSize:      1000,
-		Partitions:     1,
 	}, 0)
 	require.Nil(t, err)
 	var clk = clock.NewMock()
@@ -484,7 +478,6 @@ func TestHashClose(t *testing.T) {
 		PathIndex:      tmpdir,
 		PathTimeseries: tmpdir,
 		CacheSize:      1000,
-		Partitions:     1,
 	}, 0)
 	require.Nil(t, err)
 	repo.Close()

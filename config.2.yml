@@ -28,9 +28,10 @@ cluster:
   surrogates: 1
 
 data:
-  port: 4718
-  pepper: sriracha
   keylength: 16
+  partitions: 4096
+  pepper: sriracha
+  port: 4718
 
 repo:
   hash:

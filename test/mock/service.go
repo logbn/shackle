@@ -75,3 +75,9 @@ func (h *ServiceHash) Hash(a, b []byte) []byte {
 	sha := sha1.Sum(append(a, b...))
 	return sha[:]
 }
+
+type ServiceCoordination struct{}
+
+type ServicePropagation struct{}
+
+type ServiceDelegation struct{}

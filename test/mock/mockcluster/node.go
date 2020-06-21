@@ -1,4 +1,4 @@
-package clustermock
+package mockcluster
 
 import (
 	"highvolume.io/shackle/entity"

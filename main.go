@@ -54,7 +54,7 @@ func main() {
 			cfg := loadConfig(logger, paths[i])
 			err := log.SetLevelLogrus(logger, cfg.Log.Level)
 			if err != nil {
-				logger.Errorf(err.Error())
+				logger.Fatalf(err.Error())
 			}
 			// App Startup
 			var (
@@ -62,7 +62,10 @@ func main() {
 			)
 
 			if cfg.Cluster.Enabled {
-				cluster = app.NewCluster(cfg, logger)
+				cluster, err = app.NewCluster(cfg, logger)
+				if err != nil {
+					logger.Fatalf("Error Starting Cluster Node %d - %s", i, err.Error())
+				}
 				logger.Infof("Starting Cluster Node %d", i)
 				cluster.Start()
 			}
