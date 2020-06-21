@@ -10,6 +10,10 @@ clean:
 build:
 	go build $(LDFLAGS) -o dist/$(PROJECTNAME) main.go
 
+coverage:
+	go test ./... -coverprofile=dist/coverage.out -coverpkg=./...
+	go tool cover -html=dist/coverage.out -o dist/coverage.html
+
 .PHONY: help
 all: help
 help: Makefile
