@@ -20,37 +20,37 @@ type Cluster struct {
 	apiPortHttp int
 }
 
-func NewCluster(cfg config.App, log log.Logger) *Cluster {
+func NewCluster(cfg config.App, log log.Logger) (*Cluster, error) {
 	// service.Hash
 	svcHash, err := service.NewHash(&cfg)
 	if svcHash == nil || err != nil {
-		log.Fatal("Hash service misconfigured - ", err)
+		return nil, fmt.Errorf("Hash service misconfigured - %s", err.Error())
 	}
 	// service.Coordination
 	svcCoordination, err := service.NewCoordination(&cfg)
 	if svcCoordination == nil || err != nil {
-		log.Fatal("Coordination service misconfigured - ", err)
+		return nil, fmt.Errorf("Coordination service misconfigured - %s", err.Error())
 	}
 	// service.Persistence
 	svcPersistence, err := service.NewPersistence(&cfg, repo.NewHash, log)
 	if svcPersistence == nil || err != nil {
-		log.Fatal("Persistence service misconfigured - ", err)
+		return nil, fmt.Errorf("Persistence service misconfigured - %s", err.Error())
 	}
 	// service.Propagation
 	svcPropagation, err := service.NewPropagation(&cfg)
 	if svcPropagation == nil || err != nil {
-		log.Fatal("Propagation service misconfigured - ", err)
+		return nil, fmt.Errorf("Propagation service misconfigured - %s", err.Error())
 	}
 	// service.Delegation
 	svcDelegation, err := service.NewDelegation(&cfg)
 	if svcDelegation == nil || err != nil {
-		log.Fatal("Delegation service misconfigured - ", err)
+		return nil, fmt.Errorf("Delegation service misconfigured - %s", err.Error())
 	}
 
 	// cluster.Node
 	node, err := cluster.NewNode(cfg, log, svcHash, svcCoordination, svcPersistence, svcPropagation, svcDelegation)
 	if node == nil || err != nil {
-		log.Fatal("Node misconfigured - ", err)
+		return nil, fmt.Errorf("Node misconfigured - %s", err.Error())
 	}
 
 	// fasthttp.Server
@@ -68,7 +68,7 @@ func NewCluster(cfg config.App, log log.Logger) *Cluster {
 	}
 
 	// Create GRPC Server
-	return &Cluster{log, server, node, cfg.Api.Http.Port}
+	return &Cluster{log, server, node, cfg.Api.Http.Port}, nil
 }
 
 func (a *Cluster) Start() {
