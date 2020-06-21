@@ -72,6 +72,7 @@ func NewCluster(cfg config.App, log log.Logger) (*Cluster, error) {
 }
 
 func (a *Cluster) Start() {
+	a.node.Start()
 	go func() {
 		a.log.Infof("Cluster HTTP Api listening on port %d", a.apiPortHttp)
 		err := a.server.ListenAndServe(fmt.Sprintf(":%d", a.apiPortHttp))
@@ -82,6 +83,5 @@ func (a *Cluster) Start() {
 }
 
 func (a *Cluster) Stop() {
-	a.server.Shutdown()
 	a.node.Stop()
 }

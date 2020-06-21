@@ -314,11 +314,15 @@ func (c *hash) SweepExpired(expts []byte, limit int) (maxAge time.Duration, dele
 				lastts = ts
 				keys = []byte("")
 				stride = len(first)
-				for {
+				for i := 0; ; i++{
 					_, v, err = hcur.Get(nil, nil, lmdb.NextMultiple)
-					if lmdb.IsNotFound(err) || ts == nil {
+					if lmdb.IsNotFound(err) {
 						err = nil
-						break
+						if i == 0 {
+							v = first
+						} else {
+							break
+						}
 					}
 					if err != nil {
 						return err
@@ -387,8 +391,6 @@ func (c *hash) SweepLocked(expts []byte) (scanned int, deleted int, err error) {
 	var hs string
 	var tss string
 	var start []byte
-	var first []byte
-	var stride int
 	var lastts = make([]byte, 8)
 	var removedFromCache = map[string]string{}
 	c.mutex.Lock()
@@ -404,11 +406,11 @@ func (c *hash) SweepLocked(expts []byte) (scanned int, deleted int, err error) {
 			return err
 		}
 		if start == nil {
-			ts, first, err = hcur.Get(nil, nil, lmdb.NextNoDup)
+			ts, v, err = hcur.Get(nil, nil, lmdb.First)
 		} else {
-			ts, first, err = hcur.Get(start, nil, lmdb.SetRange)
+			ts, v, err = hcur.Get(start, nil, lmdb.SetRange)
 			if bytes.Compare(ts, start) == 0 {
-				ts, first, err = hcur.Get(nil, nil, lmdb.NextNoDup)
+				ts, v, err = hcur.Get(nil, nil, lmdb.NextNoDup)
 			}
 		}
 		for {
@@ -424,32 +426,30 @@ func (c *hash) SweepLocked(expts []byte) (scanned int, deleted int, err error) {
 			}
 			lastts = ts
 			tss = strconv.Itoa(int(binary.BigEndian.Uint64(ts)))
-			stride = len(first)
 			for {
-				_, keys, err := hcur.Get(nil, nil, lmdb.NextMultiple)
-				if lmdb.IsNotFound(err) || keys == nil {
+				hs = string(v)
+				scanned++
+				if c.cache.Remove(hs) {
+					err = tstxn.Del(c.tsdbi, ts, v)
+					if err != nil {
+						return err
+					}
+					removedFromCache[hs] = tss
+					deleted++
+				}
+				ts, v, err = hcur.Get(nil, nil, lmdb.NextDup)
+				if lmdb.IsNotFound(err) {
 					err = nil
 					break
 				}
 				if err != nil {
 					return err
 				}
-				multi := lmdb.WrapMulti(keys, stride)
-				for i := 0; i < multi.Len(); i++ {
-					v = multi.Val(i)
-					hs = string(v)
-					if c.cache.Remove(hs) {
-						err = tstxn.Del(c.tsdbi, ts, v)
-						if err != nil {
-							return err
-						}
-						removedFromCache[hs] = tss
-						deleted++
-					}
-					scanned++
-				}
 			}
-			ts, _, err = hcur.Get(nil, nil, lmdb.NextNoDup)
+			ts, v, err = hcur.Get(lastts, nil, lmdb.SetRange)
+			if bytes.Compare(ts, lastts) == 0 {
+				ts, v, err = hcur.Get(nil, nil, lmdb.NextNoDup)
+			}
 		}
 		err = tstxn.Put(c.tsmetadbi, chkLock, lastts, 0)
 		if err != nil {

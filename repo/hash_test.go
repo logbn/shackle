@@ -320,6 +320,7 @@ func TestHashSweepLocked(t *testing.T) {
 		assert.Equal(t, 2, scanned)
 		assert.Equal(t, 2, abandoned)
 
+		// Lock
 		items = entity.Batch{
 			entity.BatchItem{0, []byte("0000000000000020")},
 			entity.BatchItem{1, []byte("0000000000000021")},
@@ -328,7 +329,6 @@ func TestHashSweepLocked(t *testing.T) {
 			entity.BatchItem{4, []byte("0000000000000024")},
 			entity.BatchItem{5, []byte("0000000000000025")},
 		}
-		// Lock
 		res, err = repo.Lock(items)
 		require.Nil(t, err)
 		assert.Len(t, res, 6)
@@ -348,10 +348,71 @@ func TestHashSweepLocked(t *testing.T) {
 
 		clk.Add(time.Second)
 
+		// Single key
+		items = entity.Batch{
+			entity.BatchItem{0, []byte("0000000000000030")},
+		}
+		res, err = repo.Lock(items)
+		require.Nil(t, err)
+		assert.Len(t, res, 1)
+		for i := 0; i < len(res); i++ {
+			assert.Equal(t, entity.ITEM_LOCKED, res[i])
+		}
+		clk.Add(lockExp + time.Second)
+		binary.BigEndian.PutUint64(lockexpts, uint64(clk.Now().Add(-1*lockExp).UnixNano()))
+		scanned, abandoned, err = repo.SweepLocked(lockexpts)
+		require.Nil(t, err)
+		assert.Equal(t, 1, scanned)
+		assert.Equal(t, 1, abandoned)
+
+		clk.Add(time.Second)
+
+		// Three single keys
+		res, err = repo.Lock(entity.Batch{
+			entity.BatchItem{0, []byte("0000000000000040")},
+		})
+		require.Nil(t, err)
+		assert.Len(t, res, 1)
+		for i := 0; i < len(res); i++ {
+			assert.Equal(t, entity.ITEM_LOCKED, res[i])
+		}
+
+		clk.Add(time.Second)
+
+		res, err = repo.Lock(entity.Batch{
+			entity.BatchItem{0, []byte("0000000000000041")},
+		})
+		require.Nil(t, err)
+		assert.Len(t, res, 1)
+		for i := 0; i < len(res); i++ {
+			assert.Equal(t, entity.ITEM_LOCKED, res[i])
+		}
+
+		clk.Add(time.Second)
+
+		res, err = repo.Lock(entity.Batch{
+			entity.BatchItem{0, []byte("0000000000000042")},
+		})
+		require.Nil(t, err)
+		assert.Len(t, res, 1)
+		for i := 0; i < len(res); i++ {
+			assert.Equal(t, entity.ITEM_LOCKED, res[i])
+		}
+
+		clk.Add(lockExp + time.Second)
+
+		binary.BigEndian.PutUint64(lockexpts, uint64(clk.Now().Add(-1*lockExp).UnixNano()))
+		scanned, abandoned, err = repo.SweepLocked(lockexpts)
+		require.Nil(t, err)
+		assert.Equal(t, 3, scanned)
+		assert.Equal(t, 3, abandoned)
+
+		clk.Add(time.Second)
+
 		// Sweep batch of 1000
 		items = make(entity.Batch, 1000)
 		for i := 0; i < 1000; i++ {
-			items[i] = entity.BatchItem{0, []byte("BIGBATCH0000" + fmt.Sprintf("%04d", i))}
+			items[i] = entity.BatchItem{i, []byte("BIGBATCH0000" + fmt.Sprintf("%04d", i))}
 		}
 		res, err = repo.Lock(items)
 		require.Nil(t, err)
@@ -419,6 +480,8 @@ func TestHashSweepExpired(t *testing.T) {
 		assert.Nil(t, err)
 		assert.Equal(t, 2, deleted)
 
+		clk.Add(time.Second)
+
 		// Lock
 		_, err = repo.Commit(entity.Batch{
 			entity.BatchItem{0, []byte("0000000000000020")},
@@ -449,6 +512,49 @@ func TestHashSweepExpired(t *testing.T) {
 		require.Nil(t, err)
 		assert.Equal(t, 0, deleted)
 		_ = maxAge
+
+		clk.Add(time.Second)
+
+		// Three single keys
+		res, err = repo.Commit(entity.Batch{
+			entity.BatchItem{0, []byte("0000000000000050")},
+		})
+		require.Nil(t, err)
+		assert.Len(t, res, 1)
+		for i := 0; i < len(res); i++ {
+			assert.Equal(t, entity.ITEM_EXISTS, res[i])
+		}
+
+		clk.Add(time.Second)
+
+		res, err = repo.Commit(entity.Batch{
+			entity.BatchItem{0, []byte("0000000000000051")},
+		})
+		require.Nil(t, err)
+		assert.Len(t, res, 1)
+		for i := 0; i < len(res); i++ {
+			assert.Equal(t, entity.ITEM_EXISTS, res[i])
+		}
+
+		clk.Add(time.Second)
+
+		res, err = repo.Commit(entity.Batch{
+			entity.BatchItem{0, []byte("0000000000000052")},
+		})
+		require.Nil(t, err)
+		assert.Len(t, res, 1)
+		for i := 0; i < len(res); i++ {
+			assert.Equal(t, entity.ITEM_EXISTS, res[i])
+		}
+
+		clk.Add(keyExp + time.Second)
+
+		binary.BigEndian.PutUint64(keyExpts, uint64(clk.Now().Add(-1*keyExp).UnixNano()))
+		maxAge, deleted, err = repo.SweepExpired(keyExpts, 10)
+		require.Nil(t, err)
+		assert.Equal(t, 3, deleted)
+
+		clk.Add(time.Second)
 
 		// Sweep batch of 1000
 		items = make(entity.Batch, 1000)

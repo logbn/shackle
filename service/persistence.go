@@ -188,8 +188,8 @@ func (c *persistence) Start() {
 				// Iterating over a map randomly every tick results in noisy scan, deletion and abandonment metrics
 				// Repos are sorted on every iteration because shard balancing could change the list
 				t = c.clock.Now()
-				binary.BigEndian.PutUint32(keyexpts, uint32(t.Add(-1*c.keyExp).Unix()))
-				binary.BigEndian.PutUint32(lockexpts, uint32(t.Add(-1*c.lockExp).Unix()))
+				binary.BigEndian.PutUint64(keyexpts, uint64(t.Add(-1*c.keyExp).UnixNano()))
+				binary.BigEndian.PutUint64(lockexpts, uint64(t.Add(-1*c.lockExp).UnixNano()))
 				var sorted = make([]int, len(c.repos))
 				sort.Ints(sorted)
 				i = 0

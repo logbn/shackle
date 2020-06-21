@@ -18,12 +18,12 @@ api:
 cluster:
   id: test
   keylength: 16
-  partitions: 64
+  partitions: 16
   pepper: sriracha
   replicas: 3
   surrogates: 1
   node:
-    id: 1
+    id: 2
     raft_port: 4719
     data_port: 4718
     join: 127.0.0.1:4709
@@ -33,7 +33,7 @@ repo:
     cachesize: 100000
     expiration_batch_size: 1000
     key_expiration: 730h
-    lock_expiration: 30s
+    lock_expiration: 10s
     path_ix: /data/node2
     path_ts: /data/node2
     sweep_interval: 1s
