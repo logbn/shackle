@@ -17,19 +17,16 @@ api:
 
 cluster:
   id: test
-  partitions: 64
-  raft:
-    node_id: 1
-    port: 4719
-    join: 127.0.0.1:4709
-  replicas: 3
-  surrogates: 1
-
-data:
   keylength: 16
   partitions: 64
   pepper: sriracha
-  port: 4718
+  replicas: 3
+  surrogates: 1
+  node:
+    id: 1
+    raft_port: 4719
+    data_port: 4718
+    join: 127.0.0.1:4709
 
 repo:
   hash:

@@ -7,10 +7,9 @@ import (
 type App struct {
 	Api     *Api     `yaml:"api"`
 	Cluster *Cluster `yaml:"cluster"`
-	Data    Data    `yaml:"data"`
-	Log     Log     `yaml:"log"`
-	Monitor Monitor `yaml:"monitor"`
-	Repo    Repo    `yaml:"repo"`
+	Log     Log      `yaml:"log"`
+	Monitor Monitor  `yaml:"monitor"`
+	Repo    Repo     `yaml:"repo"`
 }
 
 type Api struct {
@@ -30,27 +29,23 @@ type ApiHttp struct {
 
 type Cluster struct {
 	ID         string `yaml:"id"`
-	Partitions int    `yaml:"partitions"`
-	Raft       Raft   `yaml:"raft"`
-	Replicas   int    `yaml:"replicas"`
-	Surrogates int    `yaml:"surrogates"`
-}
-
-type Data struct {
 	KeyLength  int    `yaml:"keylength"`
 	Partitions int    `yaml:"partitions"`
 	Pepper     string `yaml:"pepper"`
-	Port       int    `yaml:"port"`
+	Node       Node   `yaml:"node"`
+	Replicas   int    `yaml:"replicas"`
+	Surrogates int    `yaml:"surrogates"`
 }
 
 type Log struct {
 	Level string `yaml:"level"`
 }
 
-type Raft struct {
-	NodeID string `yaml:"node_id"`
-	Port   int    `yaml:"port"`
-	Join   string `yaml:"join"`
+type Node struct {
+	ID       string `yaml:"id"`
+	DataPort int    `yaml:"data_port"`
+	RaftPort int    `yaml:"raft_port"`
+	Join     string `yaml:"join"`
 }
 
 type Repo struct {

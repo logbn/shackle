@@ -21,8 +21,8 @@ type hash struct {
 func NewHash(cfg *config.App) (r *hash, err error) {
 	var hashFunc func([]byte) []byte
 	var (
-		keylen = cfg.Data.KeyLength
-		pepper = []byte(cfg.Data.Pepper)
+		keylen = cfg.Cluster.KeyLength
+		pepper = []byte(cfg.Cluster.Pepper)
 	)
 	if keylen <= 20 {
 		hashFunc = func(in []byte) []byte {

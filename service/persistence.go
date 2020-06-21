@@ -37,7 +37,7 @@ type persistence struct {
 // NewPersistence returns a persistence service
 func NewPersistence(cfg *config.App, rfh repo.FactoryHash, log log.Logger) (r *persistence, err error) {
 	var (
-		partitions = cfg.Data.Partitions
+		partitions = cfg.Cluster.Partitions
 		repos      = map[int]repo.Hash{}
 	)
 	if partitions < 1 {

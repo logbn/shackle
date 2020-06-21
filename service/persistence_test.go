@@ -19,7 +19,7 @@ import (
 func TestNewPersistence(t *testing.T) {
 	logger := &mock.Logger{}
 	svc, err := NewPersistence(&config.App{
-		Data: config.Data{
+		Cluster: &config.Cluster{
 			Partitions: 4,
 		},
 		Repo: config.Repo{
@@ -35,7 +35,7 @@ func TestNewPersistence(t *testing.T) {
 func TestPersistence(t *testing.T) {
 	logger := &mock.Logger{}
 	svc, err := NewPersistence(&config.App{
-		Data: config.Data{
+		Cluster: &config.Cluster{
 			Partitions: 4,
 		},
 		Repo: config.Repo{
@@ -169,7 +169,7 @@ func TestPersistenceSweep(t *testing.T) {
 	var lockedErr error
 	logger := &mock.Logger{}
 	svc, err := NewPersistence(&config.App{
-		Data: config.Data{
+		Cluster: &config.Cluster{
 			Partitions: 4,
 		},
 		Repo: config.Repo{

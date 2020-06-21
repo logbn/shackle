@@ -13,7 +13,7 @@ import (
 func TestHash(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		svc, err := NewHash(&config.App{
-			Data: config.Data{
+			Cluster: &config.Cluster{
 				Pepper:    "pepper",
 				KeyLength: 16,
 			},
@@ -27,7 +27,7 @@ func TestHash(t *testing.T) {
 		// SHA1("peppertest")
 
 		svc, err = NewHash(&config.App{
-			Data: config.Data{
+			Cluster: &config.Cluster{
 				Pepper:    "pepper",
 				KeyLength: 24,
 			},
@@ -41,7 +41,7 @@ func TestHash(t *testing.T) {
 		// SHA256("pepperbuckettest")
 
 		svc, err = NewHash(&config.App{
-			Data: config.Data{
+			Cluster: &config.Cluster{
 				Pepper:    "pepper",
 				KeyLength: 48,
 			},
@@ -57,7 +57,7 @@ func TestHash(t *testing.T) {
 	})
 	t.Run("Failure", func(t *testing.T) {
 		svc, err := NewHash(&config.App{
-			Data: config.Data{
+			Cluster: &config.Cluster{
 				Pepper:    "test",
 				KeyLength: 80,
 			},
