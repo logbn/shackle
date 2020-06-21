@@ -5,8 +5,8 @@ import (
 )
 
 type App struct {
-	Api     Api     `yaml:"api"`
-	Cluster Cluster `yaml:"cluster"`
+	Api     *Api     `yaml:"api"`
+	Cluster *Cluster `yaml:"cluster"`
 	Data    Data    `yaml:"data"`
 	Log     Log     `yaml:"log"`
 	Monitor Monitor `yaml:"monitor"`
@@ -19,7 +19,6 @@ type Api struct {
 }
 
 type ApiHttp struct {
-	Enabled         bool          `yaml:"enabled"`
 	IdleTimeout     time.Duration `yaml:"idle_timeout"`
 	Keepalive       bool          `yaml:"keepalive"`
 	KeepalivePeriod time.Duration `yaml:"keepalive_period"`
@@ -30,7 +29,6 @@ type ApiHttp struct {
 }
 
 type Cluster struct {
-	Enabled    bool   `yaml:"enabled"`
 	ID         string `yaml:"id"`
 	Partitions int    `yaml:"partitions"`
 	Raft       Raft   `yaml:"raft"`

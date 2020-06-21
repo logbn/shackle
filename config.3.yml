@@ -4,7 +4,6 @@ log:
   level: debug
 
 api:
-  enabled: true
   http:
     port: 8082
     keepalive: true
@@ -17,19 +16,18 @@ api:
     port: 9092
 
 cluster:
-  enabled: true
   id: test
   partitions: 64
-  replicas: 3
-  surrogates: 1
   raft:
     node_id: 3
     port: 4729
     join: 127.0.0.1:4709
+  replicas: 3
+  surrogates: 1
 
 data:
   keylength: 16
-  partitions: 4096
+  partitions: 64
   pepper: sriracha
   port: 4728
 

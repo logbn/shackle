@@ -61,7 +61,7 @@ func main() {
 				cluster *app.Cluster
 			)
 
-			if cfg.Cluster.Enabled {
+			if cfg.Cluster != nil {
 				cluster, err = app.NewCluster(cfg, logger)
 				if err != nil {
 					logger.Fatalf("Error Starting Cluster Node %d - %s", i, err.Error())

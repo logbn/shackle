@@ -4,7 +4,6 @@ log:
   level: debug
 
 api:
-  enabled: true
   http:
     port: 8080
     keepalive: true
@@ -17,7 +16,6 @@ api:
     port: 9090
 
 cluster:
-  enabled: true
   id: test
   partitions: 64
   raft:
@@ -28,7 +26,7 @@ cluster:
 
 data:
   keylength: 16
-  partitions: 4096
+  partitions: 64
   pepper: sriracha
   port: 4708
 
