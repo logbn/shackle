@@ -478,14 +478,16 @@ func TestHashSweepExpired(t *testing.T) {
 			entity.BatchItem{1, []byte("0000000000000011")},
 		})
 		// Sweep
-		maxAge, deleted, err := repo.SweepExpired(clk.Now().Add(-1*keyExp), 0)
+		maxAge, notFound, deleted, err := repo.SweepExpired(clk.Now().Add(-1*keyExp), 0)
 		require.Nil(t, err)
+		assert.Equal(t, 2, notFound) // Lock sweep was not run to catch these abandonned locks
 		assert.Equal(t, 4, deleted)
 
 		// Wait and sweep again
 		clk.Add(keyExp + time.Second)
-		maxAge, deleted, err = repo.SweepExpired(clk.Now().Add(-1*keyExp), 0)
+		maxAge, notFound, deleted, err = repo.SweepExpired(clk.Now().Add(-1*keyExp), 0)
 		assert.Nil(t, err)
+		assert.Equal(t, 0, notFound)
 		assert.Equal(t, 2, deleted)
 
 		clk.Add(time.Second)
@@ -506,17 +508,21 @@ func TestHashSweepExpired(t *testing.T) {
 			entity.BatchItem{1, []byte("0000000000000041")},
 		})
 		clk.Add(keyExp + time.Second)
-		maxAge, deleted, err = repo.SweepExpired(clk.Now().Add(-1*keyExp), 2)
+		maxAge, notFound, deleted, err = repo.SweepExpired(clk.Now().Add(-1*keyExp), 2)
 		require.Nil(t, err)
+		assert.Equal(t, 0, notFound)
 		assert.Equal(t, 2, deleted)
-		maxAge, deleted, err = repo.SweepExpired(clk.Now().Add(-1*keyExp), 2)
+		maxAge, notFound, deleted, err = repo.SweepExpired(clk.Now().Add(-1*keyExp), 2)
 		require.Nil(t, err)
+		assert.Equal(t, 0, notFound)
 		assert.Equal(t, 2, deleted)
-		maxAge, deleted, err = repo.SweepExpired(clk.Now().Add(-1*keyExp), 2)
+		maxAge, notFound, deleted, err = repo.SweepExpired(clk.Now().Add(-1*keyExp), 2)
 		require.Nil(t, err)
+		assert.Equal(t, 0, notFound)
 		assert.Equal(t, 2, deleted)
-		maxAge, deleted, err = repo.SweepExpired(clk.Now().Add(-1*keyExp), 2)
+		maxAge, notFound, deleted, err = repo.SweepExpired(clk.Now().Add(-1*keyExp), 2)
 		require.Nil(t, err)
+		assert.Equal(t, 0, notFound)
 		assert.Equal(t, 0, deleted)
 		_ = maxAge
 
@@ -556,8 +562,9 @@ func TestHashSweepExpired(t *testing.T) {
 
 		clk.Add(keyExp + time.Second)
 
-		maxAge, deleted, err = repo.SweepExpired(clk.Now().Add(-1*keyExp), 10)
+		maxAge, notFound, deleted, err = repo.SweepExpired(clk.Now().Add(-1*keyExp), 10)
 		require.Nil(t, err)
+		assert.Equal(t, 0, notFound)
 		assert.Equal(t, 3, deleted)
 
 		clk.Add(time.Second)
@@ -571,8 +578,9 @@ func TestHashSweepExpired(t *testing.T) {
 		require.Nil(t, err)
 		assert.Len(t, res, 1000)
 		clk.Add(keyExp + time.Second)
-		maxAge, deleted, err = repo.SweepExpired(clk.Now().Add(-1*keyExp), 2000)
+		maxAge, notFound, deleted, err = repo.SweepExpired(clk.Now().Add(-1*keyExp), 2000)
 		require.Nil(t, err)
+		assert.Equal(t, 0, notFound)
 		assert.Equal(t, 1000, deleted)
 		_ = maxAge
 	})

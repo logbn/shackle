@@ -199,7 +199,7 @@ func (c *persistence) Start() {
 				for k := range sorted {
 					if c.keyExp > 0 {
 						// TODO - create expiration sweep limit oracle to perform sweep during periods of low traffic
-						maxAge, deleted, err := c.repos[k].SweepExpired(keyexpTime, 0)
+						maxAge, notFound, deleted, err := c.repos[k].SweepExpired(keyexpTime, 0)
 						if err != nil {
 							// monitor error
 							c.log.Error(err.Error())
@@ -209,6 +209,8 @@ func (c *persistence) Start() {
 							_ = deleted
 							// monitor maxage
 							_ = maxAge
+							// monitor notFound
+							_ = notFound
 						}
 					}
 					if c.lockExp > 0 {

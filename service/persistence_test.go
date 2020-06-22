@@ -181,7 +181,7 @@ func TestPersistenceSweep(t *testing.T) {
 		},
 	}, func(cfg *config.RepoHash, partition int) (r repo.Hash, err error) {
 		r = &mock.RepoHash{
-			SweepExpiredFunc: func(exp time.Time, limit int) (maxAge time.Duration, deleted int, err error) {
+			SweepExpiredFunc: func(exp time.Time, limit int) (maxAge time.Duration, notFound, deleted int, err error) {
 				mutex.Lock()
 				defer mutex.Unlock()
 				sweepExpiredCalls++

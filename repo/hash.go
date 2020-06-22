@@ -37,7 +37,7 @@ type Hash interface {
 	Lock(batch entity.Batch) (res []int8, err error)
 	Rollback(batch entity.Batch) (res []int8, err error)
 	Commit(batch entity.Batch) (res []int8, err error)
-	SweepExpired(exp time.Time, limit int) (maxAge time.Duration, deleted int, err error)
+	SweepExpired(exp time.Time, limit int) (maxAge time.Duration, notFound, deleted int, err error)
 	SweepLocked(exp time.Time) (scanned int, deleted int, err error)
 	Close()
 }
@@ -280,7 +280,7 @@ func (c *hash) Commit(batch entity.Batch) (res []int8, err error) {
 }
 
 // SweepExpired deletes expired items
-func (c *hash) SweepExpired(exp time.Time, limit int) (maxAge time.Duration, deleted int, err error) {
+func (c *hash) SweepExpired(exp time.Time, limit int) (maxAge time.Duration, notFound, deleted int, err error) {
 	var v []byte
 	var ts []byte
 	var tss string
@@ -333,8 +333,12 @@ func (c *hash) SweepExpired(exp time.Time, limit int) (maxAge time.Duration, del
 					multi := lmdb.WrapMulti(v, stride)
 					for i := 0; i < multi.Len(); i++ {
 						err = ixtxn.Del(c.ixdbi, multi.Val(i), ts)
-						if err != nil && !lmdb.IsNotFound(err) {
-							return err
+						if err != nil {
+							if lmdb.IsNotFound(err) {
+								notFound++
+							} else {
+								return err
+							}
 						}
 					}
 					deleted += multi.Len()
