@@ -1,7 +1,6 @@
 package service
 
 import (
-	"encoding/binary"
 	"sort"
 	"sync"
 	"time"
@@ -178,18 +177,18 @@ func (c *persistence) Start() {
 	go func() {
 		var i int
 		var t time.Time
-		var keyexpts = make([]byte, 8)
-		var lockexpts = make([]byte, 8)
+		var keyexpTime time.Time
+		var lockexpTime time.Time
 		for {
 			select {
 			case <-ticker.C:
 				c.repoMutex.RLock()
-				// Sorting repos and using consistent timestamp across repos produces more uniform metrics
-				// Iterating over a map randomly every tick results in noisy scan, deletion and abandonment metrics
-				// Repos are sorted on every iteration because shard balancing could change the list
+				// Using consistent timestamp across repo sweeps produces more uniform metrics
 				t = c.clock.Now()
-				binary.BigEndian.PutUint64(keyexpts, uint64(t.Add(-1*c.keyExp).UnixNano()))
-				binary.BigEndian.PutUint64(lockexpts, uint64(t.Add(-1*c.lockExp).UnixNano()))
+				keyexpTime = t.Add(-1 * c.keyExp)
+				lockexpTime = t.Add(-1 * c.lockExp)
+				// Iterating over a map randomly every tick results in noisy scan, deletion and abandonment metrics
+				// Repos are sorted on every iteration (rather than once) because node shard inventory is dynamic
 				var sorted = make([]int, len(c.repos))
 				sort.Ints(sorted)
 				i = 0
@@ -199,8 +198,8 @@ func (c *persistence) Start() {
 				}
 				for k := range sorted {
 					if c.keyExp > 0 {
-						// TODO - create expiration sweep limit oracle
-						maxAge, deleted, err := c.repos[k].SweepExpired(keyexpts, 0)
+						// TODO - create expiration sweep limit oracle to perform sweep during periods of low traffic
+						maxAge, deleted, err := c.repos[k].SweepExpired(keyexpTime, 0)
 						if err != nil {
 							// monitor error
 							c.log.Error(err.Error())
@@ -213,7 +212,7 @@ func (c *persistence) Start() {
 						}
 					}
 					if c.lockExp > 0 {
-						scanned, abandoned, err := c.repos[k].SweepLocked(lockexpts)
+						scanned, abandoned, err := c.repos[k].SweepLocked(lockexpTime)
 						if err != nil {
 							// monitor error
 							c.log.Error(err.Error())

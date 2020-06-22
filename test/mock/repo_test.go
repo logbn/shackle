@@ -67,27 +67,25 @@ func TestRepoFactoryhash(t *testing.T) {
 	assert.Equal(t, repo.(*RepoHash).Closes, 2)
 
 	// Sweep
-	m, d, err := repo.SweepExpired([]byte("test"), 11)
+	m, d, err := repo.SweepExpired(time.Now(), 11)
 	require.Nil(t, err)
 	assert.Equal(t, 0, int(m))
 	assert.Equal(t, 0, d)
-	tt, d, err := repo.SweepLocked([]byte("test2"))
+	tt, d, err := repo.SweepLocked(time.Now())
 	require.Nil(t, err)
 	assert.Equal(t, 0, tt)
 	assert.Equal(t, 0, d)
-	repo.(*RepoHash).SweepExpiredFunc = func(exp []byte, limit int) (maxAge time.Duration, deleted int, err error) {
-		return time.Duration(len(exp)), limit, nil
+	repo.(*RepoHash).SweepExpiredFunc = func(exp time.Time, limit int) (maxAge time.Duration, deleted int, err error) {
+		return time.Duration(0), limit, nil
 	}
-	repo.(*RepoHash).SweepLockedFunc = func(exp []byte) (total int, deleted int, err error) {
-		return len(exp), 8, nil
+	repo.(*RepoHash).SweepLockedFunc = func(exp time.Time) (total int, deleted int, err error) {
+		return 0, 8, nil
 	}
-	m, d, err = repo.SweepExpired([]byte("test"), 11)
+	m, d, err = repo.SweepExpired(time.Now(), 11)
 	require.Nil(t, err)
-	assert.Equal(t, 4, int(m))
 	assert.Equal(t, 11, d)
-	tt, d, err = repo.SweepLocked([]byte("test2"))
+	tt, d, err = repo.SweepLocked(time.Now())
 	require.Nil(t, err)
-	assert.Equal(t, 5, tt)
 	assert.Equal(t, 8, d)
 
 }

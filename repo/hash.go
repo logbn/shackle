@@ -37,8 +37,8 @@ type Hash interface {
 	Lock(batch entity.Batch) (res []int8, err error)
 	Rollback(batch entity.Batch) (res []int8, err error)
 	Commit(batch entity.Batch) (res []int8, err error)
-	SweepExpired(expts []byte, limit int) (maxAge time.Duration, deleted int, err error)
-	SweepLocked(expts []byte) (scanned int, deleted int, err error)
+	SweepExpired(exp time.Time, limit int) (maxAge time.Duration, deleted int, err error)
+	SweepLocked(exp time.Time) (scanned int, deleted int, err error)
 	Close()
 }
 
@@ -280,15 +280,17 @@ func (c *hash) Commit(batch entity.Batch) (res []int8, err error) {
 }
 
 // SweepExpired deletes expired items
-func (c *hash) SweepExpired(expts []byte, limit int) (maxAge time.Duration, deleted int, err error) {
+func (c *hash) SweepExpired(exp time.Time, limit int) (maxAge time.Duration, deleted int, err error) {
 	var v []byte
 	var ts []byte
 	var tss string
 	var keys []byte
 	var first []byte
 	var stride int
+	var expts = make([]byte, 8)
 	var lastts = make([]byte, 8)
 	var removedFromHistory = map[string][]byte{}
+	binary.BigEndian.PutUint64(expts, uint64(exp.UnixNano()))
 
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
@@ -314,7 +316,7 @@ func (c *hash) SweepExpired(expts []byte, limit int) (maxAge time.Duration, dele
 				lastts = ts
 				keys = []byte("")
 				stride = len(first)
-				for i := 0; ; i++{
+				for i := 0; ; i++ {
 					_, v, err = hcur.Get(nil, nil, lmdb.NextMultiple)
 					if lmdb.IsNotFound(err) {
 						err = nil
@@ -385,16 +387,19 @@ func (c *hash) restoreHistory(removedFromHistory map[string][]byte, origErr erro
 // Starts from lock expiration checkpoint and evaluates all keys up to (time - expiration)
 // No limit because it only touches history and in-memory cache. Doesn't affect the set.
 // Cursor reads are sequential (fast)
-func (c *hash) SweepLocked(expts []byte) (scanned int, deleted int, err error) {
+func (c *hash) SweepLocked(exp time.Time) (scanned int, deleted int, err error) {
 	var v []byte
 	var ts []byte
 	var hs string
 	var tss string
 	var start []byte
+	var expts = make([]byte, 8)
 	var lastts = make([]byte, 8)
 	var removedFromCache = map[string]string{}
+	binary.BigEndian.PutUint64(expts, uint64(exp.UnixNano()))
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
+
 	err = c.tsenv.Update(func(tstxn *lmdb.Txn) (err error) {
 		hcur, err := tstxn.OpenCursor(c.tsdbi)
 		if err != nil {
@@ -414,7 +419,7 @@ func (c *hash) SweepLocked(expts []byte) (scanned int, deleted int, err error) {
 			}
 		}
 		for {
-			if lmdb.IsNotFound(err) || ts == nil {
+			if lmdb.IsNotFound(err) {
 				err = nil
 				break
 			}
@@ -424,13 +429,13 @@ func (c *hash) SweepLocked(expts []byte) (scanned int, deleted int, err error) {
 			if bytes.Compare(ts, expts) > 0 {
 				break
 			}
-			lastts = ts
+			copy(lastts, ts)
 			tss = strconv.Itoa(int(binary.BigEndian.Uint64(ts)))
 			for {
 				hs = string(v)
 				scanned++
 				if c.cache.Remove(hs) {
-					err = tstxn.Del(c.tsdbi, ts, v)
+					err = hcur.Del(0)
 					if err != nil {
 						return err
 					}
@@ -446,14 +451,14 @@ func (c *hash) SweepLocked(expts []byte) (scanned int, deleted int, err error) {
 					return err
 				}
 			}
+			err = tstxn.Put(c.tsmetadbi, chkLock, lastts, 0)
+			if err != nil {
+				return
+			}
 			ts, v, err = hcur.Get(lastts, nil, lmdb.SetRange)
 			if bytes.Compare(ts, lastts) == 0 {
 				ts, v, err = hcur.Get(nil, nil, lmdb.NextNoDup)
 			}
-		}
-		err = tstxn.Put(c.tsmetadbi, chkLock, lastts, 0)
-		if err != nil {
-			return
 		}
 		return
 	})
@@ -463,11 +468,12 @@ func (c *hash) SweepLocked(expts []byte) (scanned int, deleted int, err error) {
 			c.cache.Add(k, tss, tss)
 		}
 		return
+	} else {
+		err = c.ixenv.Update(func(ixtxn *lmdb.Txn) (err error) {
+			err = ixtxn.Put(c.ixmetadbi, chkLock, lastts, 0)
+			return
+		})
 	}
-	err = c.ixenv.Update(func(ixtxn *lmdb.Txn) (err error) {
-		err = ixtxn.Put(c.ixmetadbi, chkLock, lastts, 0)
-		return
-	})
 	return
 }
 
