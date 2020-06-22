@@ -128,6 +128,8 @@ func (c *hash) Lock(batch entity.Batch) (res []int8, err error) {
 	}
 	res = make([]int8, len(batch))
 	var ts = make([]byte, 8)
+	var keys []byte
+	var stride = len(batch[0].Hash)
 
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
@@ -146,13 +148,24 @@ func (c *hash) Lock(batch entity.Batch) (res []int8, err error) {
 				if err == nil {
 					res[i] = entity.ITEM_EXISTS
 				} else if lmdb.IsNotFound(err) {
-					res[i] = entity.ITEM_LOCKED
+					// Add hash to lock cache and queue hash for addition to history
 					c.cache.Add(string(item.Hash), tss, tss)
-					err = tstxn.Put(c.tsdbi, ts, item.Hash, 0)
-					if err != nil {
-						return
-					}
+					keys = append(keys, item.Hash...)
+					res[i] = entity.ITEM_LOCKED
 				} else {
+					return
+				}
+			}
+			if len(keys) > 0 {
+				// Write hashes to history in one batch
+				var hcur *lmdb.Cursor
+				hcur, err = tstxn.OpenCursor(c.tsdbi)
+				if err != nil {
+					return err
+				}
+				defer hcur.Close()
+				err = hcur.PutMulti(ts, keys, stride, 0)
+				if err != nil {
 					return
 				}
 			}
