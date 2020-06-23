@@ -42,10 +42,17 @@ type Log struct {
 }
 
 type Node struct {
-	ID       string `yaml:"id"`
-	DataPort int    `yaml:"data_port"`
-	RaftPort int    `yaml:"raft_port"`
-	Join     string `yaml:"join"`
+	ID       string     `yaml:"id"`
+	DataPort int        `yaml:"data_port"`
+	RaftPort int        `yaml:"raft_port"`
+	RaftDir  string     `yaml:"raft_dir"`
+	RaftSolo bool       `yaml:"raft_solo"`
+	Join     []NodeJoin `yaml:"join"`
+}
+
+type NodeJoin struct {
+	ID   string `yaml:"id"`
+	Addr string `yaml:"addr"`
 }
 
 type Repo struct {

@@ -64,6 +64,10 @@ func (n *node) Rollback(batch entity.Batch) (res []int8, err error) {
 	return n.svcPersistence.Rollback(batch)
 }
 
+func (n *node) GetClusterManifest() (status *entity.ClusterManifest, err error) {
+	return n.svcCoordination.GetClusterManifest()
+}
+
 func (n *node) Start() {
 	n.svcDelegation.Start()
 	n.svcPersistence.Start()

@@ -24,9 +24,9 @@ cluster:
   surrogates: 1
   node:
     id: 2
+    raft_dir: /var/lib/shackle/raft2
     raft_port: 4719
     data_port: 4718
-    join: 127.0.0.1:4709
 
 repo:
   hash:

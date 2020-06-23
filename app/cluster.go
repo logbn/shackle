@@ -27,7 +27,7 @@ func NewCluster(cfg config.App, log log.Logger) (*Cluster, error) {
 		return nil, fmt.Errorf("Hash service misconfigured - %s", err.Error())
 	}
 	// service.Coordination
-	svcCoordination, err := service.NewCoordination(&cfg)
+	svcCoordination, err := service.NewCoordination(&cfg, log)
 	if svcCoordination == nil || err != nil {
 		return nil, fmt.Errorf("Coordination service misconfigured - %s", err.Error())
 	}
