@@ -25,7 +25,7 @@ const (
 
 type Coordination interface {
 	Join(id, addr string) error
-	GetClusterManifest() (status *entity.ClusterManifest, err error)
+	GetClusterManifest() (entity.ClusterManifest, error)
 	Start()
 	Stop()
 }
@@ -39,24 +39,26 @@ type coordination struct {
 	join     []config.NodeJoin
 	obsChan  chan raft.Observation
 	cfg      *config.Cluster
+	active   bool
+	waiting  bool
 }
 
 // NewCoordination returns a coordination service
 func NewCoordination(cfg *config.App, log log.Logger) (s *coordination, err error) {
 	var (
 		nodeID   = cfg.Cluster.Node.ID
-		raftPort = cfg.Cluster.Node.RaftPort
+		addrRaft = cfg.Cluster.Node.AddrRaft
 		raftDir  = cfg.Cluster.Node.RaftDir
 		raftSolo = cfg.Cluster.Node.RaftSolo
 		join     = cfg.Cluster.Node.Join
 	)
 	config := raft.DefaultConfig()
 	config.LocalID = raft.ServerID(nodeID)
-	addr, err := net.ResolveTCPAddr("tcp", fmt.Sprintf("127.0.0.1:%d", raftPort))
+	addr, err := net.ResolveTCPAddr("tcp", addrRaft)
 	if err != nil {
 		return nil, err
 	}
-	transport, err := raft.NewTCPTransport(fmt.Sprintf("127.0.0.1:%d", raftPort), addr, 3, 10*time.Second, os.Stderr)
+	transport, err := raft.NewTCPTransport(addrRaft, addr, 3, 10*time.Second, os.Stderr)
 	if err != nil {
 		return nil, err
 	}
@@ -129,54 +131,137 @@ func (s *coordination) Join(nodeID, addr string) error {
 	return nil
 }
 
-func (s *coordination) GetClusterManifest() (status *entity.ClusterManifest, err error) {
-	return s.manifest, nil
+func (s *coordination) GetClusterManifest() (status entity.ClusterManifest, err error) {
+	return *s.manifest, nil
+}
+
+// wait uses barrier to call initialize after FSM sync
+func (s *coordination) wait() {
+	s.raft.Barrier(0).Error()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.waiting = false
+	s.initialize()
+}
+
+// initialize is called by leaders and followers upon FSM synchronization.
+func (s *coordination) initialize() {
+	if s.active {
+		return
+	}
+	if s.raft.State() == raft.Leader {
+		s.log.Debugf("%s Leader init %s", s.nodeID, s.manifest.ToJson())
+		// Set data address if not set
+		updated, err := s.setDataAddr(s.nodeID, s.cfg.Node.AddrData)
+		if updated {
+			return
+		}
+		if err != nil {
+			s.log.Errorf(err.Error())
+			return
+		}
+	} else if s.raft.State() == raft.Follower {
+		s.log.Debugf("%s Follower init", s.nodeID)
+		// Check manifest to see if leader's data address is represented.
+		leaderAddrData := s.getLeaderAddrData()
+		if len(leaderAddrData) < 1 {
+			return
+		}
+		// Check manifest to see if this node's data address is represented & correct.
+		// If not, send status to leader and return.
+		// Check manifest to ensure data address present for all nodes.
+		// If not, return.
+		// Check manifest to ensure cluster is active
+		// If not, request cluster activation from leader.
+		// Set cluster to active and return.
+		s.active = true
+		return
+	}
 }
 
 // Apply applies a Raft log entry to the key-value store.
-func (f *coordination) Apply(l *raft.Log) interface{} {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.log.Debugf("%s FSM Apply", f.nodeID)
-	err := f.manifest.FromJson(l.Data)
+func (s *coordination) Apply(l *raft.Log) interface{} {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.log.Debugf("%s FSM Apply", s.nodeID)
+	if !s.active && !s.waiting {
+		s.waiting = true
+		go s.wait()
+	}
+	err := s.manifest.FromJson(l.Data)
 	if err != nil {
-		f.log.Errorf("Error parsing raft log: %s", err.Error())
+		s.log.Errorf("Error parsing raft log: %s", err.Error())
 		return err
 	}
+
 	return nil
 }
 
 // Snapshot returns a snapshot of the key-value store.
-func (f *coordination) Snapshot() (raft.FSMSnapshot, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.log.Debugf("%s FSM Snapshot", f.nodeID)
+func (s *coordination) Snapshot() (raft.FSMSnapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.log.Debugf("%s FSM Snapshot", s.nodeID)
 
-	return &fsmSnapshot{manifest: f.manifest.ToJson()}, nil
+	return fsmSnapshot(s.manifest.ToJson()), nil
 }
 
 // Restore stores the key-value store to a previous state.
-func (f *coordination) Restore(rc io.ReadCloser) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.log.Debugf("%s FSM Restore", f.nodeID)
+func (s *coordination) Restore(rc io.ReadCloser) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.log.Debugf("%s FSM Restore", s.nodeID)
+	if !s.active && !s.waiting {
+		s.waiting = true
+		go s.wait()
+	}
 	data, err := ioutil.ReadAll(rc)
 	if err != nil {
 		return err
 	}
-	f.manifest.FromJson(data)
+	s.manifest.FromJson(data)
+
 	return nil
+}
+
+func (s *coordination) getLeaderAddrData() (addrData string) {
+	leader := s.raft.Leader()
+	n := s.manifest.GetNodeByAddrRaft(string(leader))
+	if n != nil {
+		addrData = n.AddrData
+	}
+
+	return
+}
+
+func (s *coordination) setDataAddr(nodeID, addrData string) (updated bool, err error) {
+	n := s.manifest.GetNodeByID(nodeID)
+	if n == nil {
+		err = fmt.Errorf("Node not found in setDataAddr %s", nodeID)
+		return
+	}
+	if n.AddrData == addrData {
+		return
+	}
+	n.AddrData = addrData
+	ftr := s.raft.Apply(s.manifest.ToJson(), raftTimeout)
+	err = ftr.Error()
+	if err != nil {
+		err = fmt.Errorf("Error updating data address: %s", err.Error())
+		return
+	}
+	s.log.Debugf("%s Data address set %s", nodeID, addrData)
+
+	return true, nil
 }
 
 func (s *coordination) initializeManifest() (err error) {
 	var conf = s.raft.GetConfiguration().Configuration()
 	var nodes = make([]entity.ClusterNode, len(conf.Servers))
-	var leaderAddr = s.raft.Leader()
 	for i, srv := range conf.Servers {
 		nodes[i] = entity.ClusterNode{
-			ID:     string(srv.ID),
-			Addr:   string(srv.Address),
-			Leader: srv.Address == leaderAddr,
+			ID:       string(srv.ID),
+			AddrRaft: string(srv.Address),
 		}
 	}
 	s.manifest = &entity.ClusterManifest{
@@ -195,6 +280,7 @@ func (s *coordination) initializeManifest() (err error) {
 		return
 	}
 	s.log.Debugf("%s Manifest Initialized", s.nodeID)
+
 	return nil
 }
 
@@ -203,11 +289,13 @@ func (s *coordination) Start() {
 		for {
 			select {
 			case leader := <-s.raft.LeaderCh():
+				s.mu.Lock()
+				defer s.mu.Unlock()
 				if leader {
-					s.log.Debugf("%s Leader", s.nodeID)
+					s.log.Debugf("%s Became Leader", s.nodeID)
 					for _, j := range s.join {
-						if len(j.ID) > 0 && len(j.Addr) > 0 {
-							err := s.Join(j.ID, j.Addr)
+						if len(j.ID) > 0 && len(j.AddrRaft) > 0 {
+							err := s.Join(j.ID, j.AddrRaft)
 							if err != nil {
 								s.log.Errorf(err.Error())
 							}
@@ -219,10 +307,8 @@ func (s *coordination) Start() {
 					if s.manifest.Catalog.Version == "" {
 						s.initializeManifest()
 					}
-					s.log.Debugf(string(s.manifest.ToJson()))
 				} else {
-					s.log.Debugf("%s Follower", s.nodeID)
-					s.stopObserver()
+					s.log.Debugf("%s Became Follower", s.nodeID)
 				}
 			}
 		}
@@ -237,31 +323,19 @@ func (s *coordination) startObserver() {
 			select {
 			case o := <-s.obsChan:
 				// Main event loop for responding to changes in cluster state
-				s.log.Debugf("%#v", o.Data)
-			default:
-				return
+				s.log.Debugf("OBS - %#v", o.Data)
 			}
 		}
 	}()
 }
 
 func (s *coordination) Stop() {
-	s.stopObserver()
 }
 
-func (s *coordination) stopObserver() {
-	if s.obsChan != nil {
-		close(s.obsChan)
-		s.obsChan = nil
-	}
-}
+type fsmSnapshot []byte
 
-type fsmSnapshot struct {
-	manifest []byte
-}
-
-func (f *fsmSnapshot) Persist(sink raft.SnapshotSink) (err error) {
-	_, err = sink.Write(f.manifest)
+func (f fsmSnapshot) Persist(sink raft.SnapshotSink) (err error) {
+	_, err = sink.Write(f)
 	if err != nil {
 		sink.Cancel()
 		return
@@ -271,7 +345,8 @@ func (f *fsmSnapshot) Persist(sink raft.SnapshotSink) (err error) {
 		sink.Cancel()
 		return
 	}
+
 	return
 }
 
-func (f *fsmSnapshot) Release() {}
+func (f fsmSnapshot) Release() {}

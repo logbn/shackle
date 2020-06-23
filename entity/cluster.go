@@ -34,6 +34,23 @@ func (e *ClusterManifest) FromJson(data []byte) error {
 	return json.Unmarshal(data, e)
 }
 
+func (e *ClusterManifest) GetNodeByID(nodeID string) *ClusterNode {
+	for i, n := range e.Catalog.Nodes {
+		if n.ID == nodeID {
+			return &e.Catalog.Nodes[i]
+		}
+	}
+	return nil
+}
+func (e *ClusterManifest) GetNodeByAddrRaft(addrRaft string) *ClusterNode {
+	for i, n := range e.Catalog.Nodes {
+		if n.AddrRaft == addrRaft {
+			return &e.Catalog.Nodes[i]
+		}
+	}
+	return nil
+}
+
 type ClusterCatalog struct {
 	Version    string             `json:"version"`
 	Replicas   int                `json:"k"`
@@ -46,10 +63,10 @@ type ClusterCatalog struct {
 }
 
 type ClusterNode struct {
-	ID     string            `json:"id"`
-	Addr   string            `json:"addr"`
-	Leader bool              `json:"leader"`
-	Meta   map[string]string `json:"meta"`
+	ID       string            `json:"id"`
+	AddrRaft string            `json:"addr_raft"`
+	AddrData string            `json:"addr_data"`
+	Meta     map[string]string `json:"meta"`
 }
 
 type ClusterVNode struct {

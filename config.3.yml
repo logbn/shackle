@@ -25,8 +25,9 @@ cluster:
   node:
     id: 3
     raft_dir: /var/lib/shackle/raft3
-    raft_port: 4729
-    data_port: 4728
+    addr_raft: 127.0.0.1:4729
+    addr_data: 127.0.0.1:4728
+    vnodes: 8
 
 repo:
   hash:
