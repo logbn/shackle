@@ -20,6 +20,7 @@ const (
 
 // ClusterManifest
 type ClusterManifest struct {
+	ID         string             `json:"id"`
 	Catalog    ClusterCatalog     `json:"catalog"`
 	Migrations []ClusterMigration `json:"migrations"`
 }
@@ -36,6 +37,8 @@ func (e *ClusterManifest) FromJson(data []byte) error {
 type ClusterCatalog struct {
 	Version    string             `json:"version"`
 	Replicas   int                `json:"k"`
+	Surrogates int                `json:"s"`
+	KeyLength  int                `json:"keylen"`
 	Vary       []string           `json:"vary"`
 	Nodes      []ClusterNode      `json:"nodes"`
 	VNodes     []ClusterVNode     `json:"vnodes"`
@@ -43,10 +46,10 @@ type ClusterCatalog struct {
 }
 
 type ClusterNode struct {
-	ID     string `json:"id"`
-	IP     string `json:"ip"`
-	Leader bool   `json:"leader"`
-	Zone   string `json:"zone"`
+	ID     string            `json:"id"`
+	Addr   string            `json:"addr"`
+	Leader bool              `json:"leader"`
+	Meta   map[string]string `json:"meta"`
 }
 
 type ClusterVNode struct {
