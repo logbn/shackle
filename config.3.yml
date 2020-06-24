@@ -26,8 +26,10 @@ cluster:
     id: 3
     raft_dir: /var/lib/shackle/raft3
     addr_raft: 127.0.0.1:4729
-    addr_data: 127.0.0.1:4728
-    vnodes: 8
+    addr_int_api: 127.0.0.1:4728
+    vnode_count: 8
+    meta:
+      zone: c
 
 repo:
   hash:

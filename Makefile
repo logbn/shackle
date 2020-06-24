@@ -15,7 +15,7 @@ coverage:
 	go tool cover -html=dist/coverage.out -o dist/coverage.html
 
 gen:
-	protoc api/data/grpc.proto --go_out=plugins=grpc:. --go_opt=paths=source_relative
+	protoc api/intapi/grpc.proto --go_out=plugins=grpc:. --go_opt=paths=source_relative
 
 .PHONY: help
 all: help

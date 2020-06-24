@@ -43,13 +43,14 @@ type Log struct {
 }
 
 type Node struct {
-	ID       string     `yaml:"id"`
-	AddrData string     `yaml:"addr_data"`
-	AddrRaft string     `yaml:"addr_raft"`
-	RaftDir  string     `yaml:"raft_dir"`
-	RaftSolo bool       `yaml:"raft_solo"`
-	Join     []NodeJoin `yaml:"join"`
-	Meta     NodeMeta   `yaml:"meta"`
+	ID         string     `yaml:"id"`
+	AddrIntApi string     `yaml:"addr_int_api"`
+	AddrRaft   string     `yaml:"addr_raft"`
+	Meta       NodeMeta   `yaml:"meta"`
+	RaftDir    string     `yaml:"raft_dir"`
+	RaftSolo   bool       `yaml:"raft_solo"`
+	Join       []NodeJoin `yaml:"join"`
+	VNodeCount int        `yaml:"vnode_count"`
 }
 
 type NodeMeta map[string]string

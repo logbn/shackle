@@ -7,8 +7,8 @@ import (
 	"github.com/valyala/fasthttp"
 	"google.golang.org/grpc"
 
-	"highvolume.io/shackle/api/data"
 	"highvolume.io/shackle/api/http"
+	"highvolume.io/shackle/api/intapi"
 	"highvolume.io/shackle/cluster"
 	"highvolume.io/shackle/config"
 	"highvolume.io/shackle/log"
@@ -17,18 +17,17 @@ import (
 )
 
 type Cluster struct {
-	log         log.Logger
-	dataServer  *grpc.Server
-	httpServer  *fasthttp.Server
-	node        cluster.Node
-	apiPortHttp int
-	addrData    string
+	log          log.Logger
+	intApiServer *grpc.Server
+	httpServer   *fasthttp.Server
+	node         cluster.Node
+	apiPortHttp  int
+	addrIntApi   string
 }
 
 func NewCluster(cfg config.App, log log.Logger) (*Cluster, error) {
-
 	// cluster.CoordinationClientFinder
-	coordinationClient := data.NewCoordinationClientFinder()
+	coordinationClient := intapi.NewCoordinationClientFinder()
 	if coordinationClient == nil {
 		return nil, fmt.Errorf("Coordination client finder misconfigured")
 	}
@@ -65,8 +64,8 @@ func NewCluster(cfg config.App, log log.Logger) (*Cluster, error) {
 	}
 
 	// grpc.Server
-	dataServer := grpc.NewServer()
-	data.RegisterCoordinationServer(dataServer, svcCoordination)
+	intApiServer := grpc.NewServer()
+	intapi.RegisterCoordinationServer(intApiServer, svcCoordination)
 
 	// fasthttp.Server
 	httpRouter := http.NewRouter(log, node, svcHash)
@@ -83,7 +82,7 @@ func NewCluster(cfg config.App, log log.Logger) (*Cluster, error) {
 	}
 
 	// Create GRPC Server
-	return &Cluster{log, dataServer, httpServer, node, cfg.Api.Http.Port, cfg.Cluster.Node.AddrData}, nil
+	return &Cluster{log, intApiServer, httpServer, node, cfg.Api.Http.Port, cfg.Cluster.Node.AddrIntApi}, nil
 }
 
 func (a *Cluster) Start() (err error) {
@@ -95,12 +94,12 @@ func (a *Cluster) Start() (err error) {
 			a.log.Errorf("Cluster HTTP Api Startup Error: %s", err.Error())
 		}
 	}()
-	lis, err := net.Listen("tcp", a.addrData)
+	lis, err := net.Listen("tcp", a.addrIntApi)
 	if err != nil {
 		return
 	}
 	go func() {
-		err = a.dataServer.Serve(lis)
+		err = a.intApiServer.Serve(lis)
 		if err != nil {
 			a.log.Errorf(err.Error())
 		}
@@ -110,5 +109,5 @@ func (a *Cluster) Start() (err error) {
 
 func (a *Cluster) Stop() {
 	a.node.Stop()
-	a.dataServer.Stop()
+	a.intApiServer.Stop()
 }

@@ -8,13 +8,14 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sync"
 	"time"
 
 	"github.com/hashicorp/raft"
 	"github.com/hashicorp/raft-boltdb"
 
-	"highvolume.io/shackle/api/data"
+	"highvolume.io/shackle/api/intapi"
 	"highvolume.io/shackle/config"
 	"highvolume.io/shackle/entity"
 	"highvolume.io/shackle/log"
@@ -33,26 +34,26 @@ type Coordination interface {
 }
 
 type coordination struct {
-	data.UnimplementedCoordinationServer
-	active     bool
-	cfg        *config.Cluster
-	dataClient data.CoordinationClientFinder
-	join       []config.NodeJoin
-	log        log.Logger
-	manifest   *entity.ClusterManifest
-	mu         sync.Mutex
-	initmutex  sync.Mutex
-	nodeID     string
-	obsChan    chan raft.Observation
-	raft       *raft.Raft
-	waiting    bool
+	intapi.UnimplementedCoordinationServer
+	active       bool
+	cfg          *config.Cluster
+	intApiClient intapi.CoordinationClientFinder
+	join         []config.NodeJoin
+	log          log.Logger
+	manifest     *entity.ClusterManifest
+	mu           sync.Mutex
+	initmutex    sync.Mutex
+	nodeID       string
+	obsChan      chan raft.Observation
+	raft         *raft.Raft
+	waiting      bool
 }
 
 // NewCoordination returns a coordination service
 func NewCoordination(
 	cfg *config.App,
 	log log.Logger,
-	dcf data.CoordinationClientFinder,
+	iac intapi.CoordinationClientFinder,
 ) (s *coordination, err error) {
 	var (
 		nodeID   = cfg.Cluster.Node.ID
@@ -89,12 +90,12 @@ func NewCoordination(
 		stableStore = boltDB
 	}
 	s = &coordination{
-		nodeID:     cfg.Cluster.Node.ID,
-		log:        log,
-		join:       join,
-		manifest:   &entity.ClusterManifest{},
-		cfg:        cfg.Cluster,
-		dataClient: dcf,
+		nodeID:       cfg.Cluster.Node.ID,
+		log:          log,
+		join:         join,
+		manifest:     &entity.ClusterManifest{},
+		cfg:          cfg.Cluster,
+		intApiClient: iac,
 	}
 	s.raft, err = raft.NewRaft(config, s, logStore, stableStore, snapshots, transport)
 	if err != nil {
@@ -148,9 +149,9 @@ func (s *coordination) GetClusterManifest() (status entity.ClusterManifest, err 
 // wait uses barrier to call initialize after FSM sync
 func (s *coordination) wait() {
 	s.raft.Barrier(0).Error()
-	s.waiting = false
 	s.initmutex.Lock()
 	defer s.initmutex.Unlock()
+	s.waiting = false
 	s.active = s.manifest.ClusterActive()
 	s.initialize()
 }
@@ -164,17 +165,19 @@ func (s *coordination) initialize() {
 	state := s.raft.State()
 	if state == raft.Leader {
 		// Set data address if not set
-		_, err := s.setDataAddr(s.nodeID, s.cfg.Node.AddrData)
+		_, err := s.setNodeMeta(s.nodeID, s.cfg.Node.AddrIntApi, s.cfg.Node.Meta, s.cfg.Node.VNodeCount)
 		if err != nil {
 			s.log.Errorf(err.Error())
 			return
 		}
-		// Stop if any nodes have not yet reported their addrData
+		// Stop if any nodes have not yet reported their addrIntApi
 		for _, node := range s.manifest.Catalog.Nodes {
-			if node.AddrData == "" {
+			if node.AddrIntApi == "" {
 				return
 			}
 		}
+		// Begin allocation
+
 		// Activate Cluster
 		s.manifest.Status = entity.CLUSTER_STATUS_ACTIVE
 		data := s.manifest.ToJson()
@@ -188,16 +191,16 @@ func (s *coordination) initialize() {
 		s.active = true
 	} else if state == raft.Follower {
 		// Check manifest to see if leader's data address is represented.
-		leaderAddrData := s.getAddrData(string(s.raft.Leader()))
-		if len(leaderAddrData) < 1 {
+		leaderAddrIntApi := s.getAddrIntApi(string(s.raft.Leader()))
+		if len(leaderAddrIntApi) < 1 {
 			s.log.Debugf("%s Leader data address not set", s.nodeID)
 			return
 		}
 		// Check manifest to see if this node's data address is represented & correct.
-		nodeAddrData := s.getAddrData(s.cfg.Node.AddrRaft)
-		if nodeAddrData != s.cfg.Node.AddrData {
+		nodeAddrIntApi := s.getAddrIntApi(s.cfg.Node.AddrRaft)
+		if nodeAddrIntApi != s.cfg.Node.AddrIntApi {
 			s.log.Debugf("%s Updating data address", s.nodeID)
-			s.updateNodeData(leaderAddrData)
+			s.updateNodeData(leaderAddrIntApi)
 			return
 		}
 		return
@@ -246,10 +249,10 @@ func (s *coordination) Restore(rc io.ReadCloser) error {
 	return nil
 }
 
-func (s *coordination) getAddrData(addrRaft string) (addrData string) {
+func (s *coordination) getAddrIntApi(addrRaft string) (addrIntApi string) {
 	n := s.manifest.GetNodeByAddrRaft(addrRaft)
 	if n != nil {
-		addrData = n.AddrData
+		addrIntApi = n.AddrIntApi
 	}
 
 	return
@@ -269,7 +272,8 @@ func (s *coordination) initializeManifest() (err error) {
 		}
 	}
 	s.manifest = &entity.ClusterManifest{
-		ID: s.cfg.ID,
+		ID:     s.cfg.ID,
+		Status: entity.CLUSTER_STATUS_INITIALIZING,
 		Catalog: entity.ClusterCatalog{
 			Version:    "1.0.0",
 			Replicas:   s.cfg.Replicas,
@@ -289,6 +293,7 @@ func (s *coordination) initializeManifest() (err error) {
 	return nil
 }
 
+// Start starts the service
 func (s *coordination) Start() {
 	go func() {
 		for {
@@ -330,41 +335,58 @@ func (s *coordination) startObserver() {
 	}()
 }
 
-func (s *coordination) updateNodeData(leaderAddrData string) (err error) {
-	c, err := s.dataClient.Get(leaderAddrData)
+// Makes GRPC call to leader to update node meta
+func (s *coordination) updateNodeData(leaderAddrIntApi string) (err error) {
+	c, err := s.intApiClient.Get(leaderAddrIntApi)
 	if err != nil {
 		return
 	}
-	_, err = c.NodeUpdate(context.Background(), &data.NodeUpdateRequest{
-		Id:       s.nodeID,
-		AddrData: s.cfg.Node.AddrData,
-		Meta:     s.cfg.Node.Meta.ToJson(),
+	_, err = c.NodeUpdate(context.Background(), &intapi.NodeUpdateRequest{
+		Id:         s.nodeID,
+		AddrIntApi: s.cfg.Node.AddrIntApi,
+		Meta:       s.cfg.Node.Meta,
+		VNodeCount: uint32(s.cfg.Node.VNodeCount),
 	})
 	return
 }
 
-func (s *coordination) NodeUpdate(ctx context.Context, req *data.NodeUpdateRequest) (*data.NodeUpdateReply, error) {
-	success, err := s.setDataAddr(req.Id, req.AddrData)
-	return &data.NodeUpdateReply{Success: success}, err
+// Receives GRPC call for node meta update
+func (s *coordination) NodeUpdate(ctx context.Context, req *intapi.NodeUpdateRequest) (*intapi.NodeUpdateReply, error) {
+	success, err := s.setNodeMeta(req.Id, req.AddrIntApi, req.Meta, int(req.VNodeCount))
+	return &intapi.NodeUpdateReply{Success: success}, err
 }
 
-func (s *coordination) setDataAddr(nodeID, addrData string) (updated bool, err error) {
+// Sets node meta on leader applying manifest changes if altered
+func (s *coordination) setNodeMeta(nodeID string, addrIntApi string, meta map[string]string, vnodecount int,
+) (updated bool, err error) {
 	n := s.manifest.GetNodeByID(nodeID)
 	if n == nil {
-		err = fmt.Errorf("Node not found in setDataAddr %s", nodeID)
+		err = fmt.Errorf("Node not found in setNodeMeta %s", nodeID)
 		return
 	}
-	if n.AddrData == addrData {
+	var dirty bool
+	if n.AddrIntApi != addrIntApi {
+		n.AddrIntApi = addrIntApi
+		dirty = true
+	}
+	if n.VNodeCount != vnodecount {
+		n.VNodeCount = vnodecount
+		dirty = true
+	}
+	if !reflect.DeepEqual(n.Meta, meta) {
+		n.Meta = meta
+		dirty = true
+	}
+	if !dirty {
 		return
 	}
-	n.AddrData = addrData
 	ftr := s.raft.Apply(s.manifest.ToJson(), raftTimeout)
 	err = ftr.Error()
 	if err != nil {
 		err = fmt.Errorf("Error updating data address: %s", err.Error())
 		return
 	}
-	s.log.Debugf("%s Data address set. %s = %s", s.nodeID, nodeID, addrData)
+	s.log.Debugf("%s Data address set. %s = %s", s.nodeID, nodeID, addrIntApi)
 
 	return true, nil
 }

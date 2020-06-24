@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-option go_package = "highvolume.io/shackle/api/data";
+option go_package = "highvolume.io/shackle/api/intapi";
 
-package data;
+package intapi;
 
 service Coordination {
 	// NodeUpdate is used during cluster initialization to ensure leader has correct follower grpc address
@@ -12,8 +12,9 @@ service Coordination {
 // Node update request
 message NodeUpdateRequest {
   string id = 1;
-  string addrData = 2;
-  bytes meta = 3;
+  string addrIntApi = 2;
+  map<string, string> meta = 3;
+  uint32 vNodeCount = 4;
 }
 
 message NodeUpdateReply {
