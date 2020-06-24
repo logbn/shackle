@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"time"
 )
 
@@ -48,6 +49,14 @@ type Node struct {
 	RaftDir  string     `yaml:"raft_dir"`
 	RaftSolo bool       `yaml:"raft_solo"`
 	Join     []NodeJoin `yaml:"join"`
+	Meta     NodeMeta   `yaml:"meta"`
+}
+
+type NodeMeta map[string]string
+
+func (n NodeMeta) ToJson() (out []byte) {
+	out, _ = json.Marshal(n)
+	return
 }
 
 type NodeJoin struct {

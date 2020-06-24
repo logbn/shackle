@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+option go_package = "highvolume.io/shackle/api/data";
+
+package data;
+
+service Coordination {
+	// NodeUpdate is used during cluster initialization to ensure leader has correct follower grpc address
+	rpc NodeUpdate (NodeUpdateRequest) returns (NodeUpdateReply) {}
+}
+
+// Node update request
+message NodeUpdateRequest {
+  string id = 1;
+  string addrData = 2;
+  bytes meta = 3;
+}
+
+message NodeUpdateReply {
+  bool success = 1;
+}

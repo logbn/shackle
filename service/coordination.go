@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -13,6 +14,7 @@ import (
 	"github.com/hashicorp/raft"
 	"github.com/hashicorp/raft-boltdb"
 
+	"highvolume.io/shackle/api/data"
 	"highvolume.io/shackle/config"
 	"highvolume.io/shackle/entity"
 	"highvolume.io/shackle/log"
@@ -31,20 +33,27 @@ type Coordination interface {
 }
 
 type coordination struct {
-	nodeID   string
-	raft     *raft.Raft
-	log      log.Logger
-	mu       sync.Mutex
-	manifest *entity.ClusterManifest
-	join     []config.NodeJoin
-	obsChan  chan raft.Observation
-	cfg      *config.Cluster
-	active   bool
-	waiting  bool
+	data.UnimplementedCoordinationServer
+	active     bool
+	cfg        *config.Cluster
+	dataClient data.CoordinationClientFinder
+	join       []config.NodeJoin
+	log        log.Logger
+	manifest   *entity.ClusterManifest
+	mu         sync.Mutex
+	initmutex  sync.Mutex
+	nodeID     string
+	obsChan    chan raft.Observation
+	raft       *raft.Raft
+	waiting    bool
 }
 
 // NewCoordination returns a coordination service
-func NewCoordination(cfg *config.App, log log.Logger) (s *coordination, err error) {
+func NewCoordination(
+	cfg *config.App,
+	log log.Logger,
+	dcf data.CoordinationClientFinder,
+) (s *coordination, err error) {
 	var (
 		nodeID   = cfg.Cluster.Node.ID
 		addrRaft = cfg.Cluster.Node.AddrRaft
@@ -80,11 +89,12 @@ func NewCoordination(cfg *config.App, log log.Logger) (s *coordination, err erro
 		stableStore = boltDB
 	}
 	s = &coordination{
-		nodeID:   cfg.Cluster.Node.ID,
-		log:      log,
-		join:     join,
-		manifest: &entity.ClusterManifest{},
-		cfg:      cfg.Cluster,
+		nodeID:     cfg.Cluster.Node.ID,
+		log:        log,
+		join:       join,
+		manifest:   &entity.ClusterManifest{},
+		cfg:        cfg.Cluster,
+		dataClient: dcf,
 	}
 	s.raft, err = raft.NewRaft(config, s, logStore, stableStore, snapshots, transport)
 	if err != nil {
@@ -138,43 +148,58 @@ func (s *coordination) GetClusterManifest() (status entity.ClusterManifest, err 
 // wait uses barrier to call initialize after FSM sync
 func (s *coordination) wait() {
 	s.raft.Barrier(0).Error()
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.waiting = false
+	s.initmutex.Lock()
+	defer s.initmutex.Unlock()
+	s.active = s.manifest.ClusterActive()
 	s.initialize()
 }
 
 // initialize is called by leaders and followers upon FSM synchronization.
 func (s *coordination) initialize() {
 	if s.active {
+		s.log.Debugf("%s Node Active.", s.nodeID)
 		return
 	}
-	if s.raft.State() == raft.Leader {
-		s.log.Debugf("%s Leader init %s", s.nodeID, s.manifest.ToJson())
+	state := s.raft.State()
+	if state == raft.Leader {
 		// Set data address if not set
-		updated, err := s.setDataAddr(s.nodeID, s.cfg.Node.AddrData)
-		if updated {
-			return
-		}
+		_, err := s.setDataAddr(s.nodeID, s.cfg.Node.AddrData)
 		if err != nil {
 			s.log.Errorf(err.Error())
 			return
 		}
-	} else if s.raft.State() == raft.Follower {
-		s.log.Debugf("%s Follower init", s.nodeID)
+		// Stop if any nodes have not yet reported their addrData
+		for _, node := range s.manifest.Catalog.Nodes {
+			if node.AddrData == "" {
+				return
+			}
+		}
+		// Activate Cluster
+		s.manifest.Status = entity.CLUSTER_STATUS_ACTIVE
+		data := s.manifest.ToJson()
+		ftr := s.raft.Apply(data, raftTimeout)
+		err = ftr.Error()
+		if err != nil {
+			err = fmt.Errorf("Error activating cluster: %s", err.Error())
+			return
+		}
+		s.log.Debugf("%s Cluster Activated. %s", s.nodeID, s.manifest.ToJson())
+		s.active = true
+	} else if state == raft.Follower {
 		// Check manifest to see if leader's data address is represented.
-		leaderAddrData := s.getLeaderAddrData()
+		leaderAddrData := s.getAddrData(string(s.raft.Leader()))
 		if len(leaderAddrData) < 1 {
+			s.log.Debugf("%s Leader data address not set", s.nodeID)
 			return
 		}
 		// Check manifest to see if this node's data address is represented & correct.
-		// If not, send status to leader and return.
-		// Check manifest to ensure data address present for all nodes.
-		// If not, return.
-		// Check manifest to ensure cluster is active
-		// If not, request cluster activation from leader.
-		// Set cluster to active and return.
-		s.active = true
+		nodeAddrData := s.getAddrData(s.cfg.Node.AddrRaft)
+		if nodeAddrData != s.cfg.Node.AddrData {
+			s.log.Debugf("%s Updating data address", s.nodeID)
+			s.updateNodeData(leaderAddrData)
+			return
+		}
 		return
 	}
 }
@@ -183,7 +208,6 @@ func (s *coordination) initialize() {
 func (s *coordination) Apply(l *raft.Log) interface{} {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.log.Debugf("%s FSM Apply", s.nodeID)
 	if !s.active && !s.waiting {
 		s.waiting = true
 		go s.wait()
@@ -201,7 +225,6 @@ func (s *coordination) Apply(l *raft.Log) interface{} {
 func (s *coordination) Snapshot() (raft.FSMSnapshot, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.log.Debugf("%s FSM Snapshot", s.nodeID)
 
 	return fsmSnapshot(s.manifest.ToJson()), nil
 }
@@ -210,7 +233,6 @@ func (s *coordination) Snapshot() (raft.FSMSnapshot, error) {
 func (s *coordination) Restore(rc io.ReadCloser) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.log.Debugf("%s FSM Restore", s.nodeID)
 	if !s.active && !s.waiting {
 		s.waiting = true
 		go s.wait()
@@ -224,9 +246,8 @@ func (s *coordination) Restore(rc io.ReadCloser) error {
 	return nil
 }
 
-func (s *coordination) getLeaderAddrData() (addrData string) {
-	leader := s.raft.Leader()
-	n := s.manifest.GetNodeByAddrRaft(string(leader))
+func (s *coordination) getAddrData(addrRaft string) (addrData string) {
+	n := s.manifest.GetNodeByAddrRaft(addrRaft)
 	if n != nil {
 		addrData = n.AddrData
 	}
@@ -234,28 +255,11 @@ func (s *coordination) getLeaderAddrData() (addrData string) {
 	return
 }
 
-func (s *coordination) setDataAddr(nodeID, addrData string) (updated bool, err error) {
-	n := s.manifest.GetNodeByID(nodeID)
-	if n == nil {
-		err = fmt.Errorf("Node not found in setDataAddr %s", nodeID)
-		return
-	}
-	if n.AddrData == addrData {
-		return
-	}
-	n.AddrData = addrData
-	ftr := s.raft.Apply(s.manifest.ToJson(), raftTimeout)
-	err = ftr.Error()
-	if err != nil {
-		err = fmt.Errorf("Error updating data address: %s", err.Error())
-		return
-	}
-	s.log.Debugf("%s Data address set %s", nodeID, addrData)
-
-	return true, nil
-}
-
+// Build initial manifest if none exists upon cluster bootstrap
 func (s *coordination) initializeManifest() (err error) {
+	if s.manifest.Catalog.Version != "" {
+		return
+	}
 	var conf = s.raft.GetConfiguration().Configuration()
 	var nodes = make([]entity.ClusterNode, len(conf.Servers))
 	for i, srv := range conf.Servers {
@@ -273,13 +277,14 @@ func (s *coordination) initializeManifest() (err error) {
 			Nodes:      nodes,
 		},
 	}
-	ftr := s.raft.Apply(s.manifest.ToJson(), time.Minute)
+	ftr := s.raft.Apply(s.manifest.ToJson(), raftTimeout)
 	err = ftr.Error()
 	if err != nil {
 		s.log.Errorf("Error initializing manifest: %s", err.Error())
 		return
 	}
-	s.log.Debugf("%s Manifest Initialized", s.nodeID)
+	s.log.Debugf("%s Manifest Initialized %s", s.nodeID, string(s.manifest.ToJson()))
+	go s.wait()
 
 	return nil
 }
@@ -289,8 +294,6 @@ func (s *coordination) Start() {
 		for {
 			select {
 			case leader := <-s.raft.LeaderCh():
-				s.mu.Lock()
-				defer s.mu.Unlock()
 				if leader {
 					s.log.Debugf("%s Became Leader", s.nodeID)
 					for _, j := range s.join {
@@ -304,9 +307,7 @@ func (s *coordination) Start() {
 					// Wait for FSM log replay
 					s.raft.Barrier(0).Error()
 					s.startObserver()
-					if s.manifest.Catalog.Version == "" {
-						s.initializeManifest()
-					}
+					s.initializeManifest()
 				} else {
 					s.log.Debugf("%s Became Follower", s.nodeID)
 				}
@@ -327,6 +328,45 @@ func (s *coordination) startObserver() {
 			}
 		}
 	}()
+}
+
+func (s *coordination) updateNodeData(leaderAddrData string) (err error) {
+	c, err := s.dataClient.Get(leaderAddrData)
+	if err != nil {
+		return
+	}
+	_, err = c.NodeUpdate(context.Background(), &data.NodeUpdateRequest{
+		Id:       s.nodeID,
+		AddrData: s.cfg.Node.AddrData,
+		Meta:     s.cfg.Node.Meta.ToJson(),
+	})
+	return
+}
+
+func (s *coordination) NodeUpdate(ctx context.Context, req *data.NodeUpdateRequest) (*data.NodeUpdateReply, error) {
+	success, err := s.setDataAddr(req.Id, req.AddrData)
+	return &data.NodeUpdateReply{Success: success}, err
+}
+
+func (s *coordination) setDataAddr(nodeID, addrData string) (updated bool, err error) {
+	n := s.manifest.GetNodeByID(nodeID)
+	if n == nil {
+		err = fmt.Errorf("Node not found in setDataAddr %s", nodeID)
+		return
+	}
+	if n.AddrData == addrData {
+		return
+	}
+	n.AddrData = addrData
+	ftr := s.raft.Apply(s.manifest.ToJson(), raftTimeout)
+	err = ftr.Error()
+	if err != nil {
+		err = fmt.Errorf("Error updating data address: %s", err.Error())
+		return
+	}
+	s.log.Debugf("%s Data address set. %s = %s", s.nodeID, nodeID, addrData)
+
+	return true, nil
 }
 
 func (s *coordination) Stop() {

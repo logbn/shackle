@@ -67,7 +67,10 @@ func main() {
 					logger.Fatalf("Error Starting Cluster Node %d - %s", i, err.Error())
 				}
 				logger.Infof("Starting Cluster Node %d", i)
-				cluster.Start()
+				err = cluster.Start()
+				if err != nil {
+					logger.Fatalf("Error Starting Cluster Node %d - %s", i, err.Error())
+				}
 			}
 
 			started <- true

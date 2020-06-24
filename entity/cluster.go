@@ -16,11 +16,15 @@ const (
 	CLUSTER_MIGRATION_STATUS_FINALIZING = "finalizing"
 	CLUSTER_MIGRATION_STATUS_COMPLETE   = "complete"
 	CLUSTER_MIGRATION_STATUS_CANCELLED  = "cancelled"
+
+	CLUSTER_STATUS_PENDING = "pending"
+	CLUSTER_STATUS_ACTIVE  = "active"
 )
 
 // ClusterManifest
 type ClusterManifest struct {
 	ID         string             `json:"id"`
+	Status     string             `json:"status"`
 	Catalog    ClusterCatalog     `json:"catalog"`
 	Migrations []ClusterMigration `json:"migrations"`
 }
@@ -49,6 +53,9 @@ func (e *ClusterManifest) GetNodeByAddrRaft(addrRaft string) *ClusterNode {
 		}
 	}
 	return nil
+}
+func (e *ClusterManifest) ClusterActive() bool {
+	return e.Status == CLUSTER_STATUS_ACTIVE
 }
 
 type ClusterCatalog struct {
