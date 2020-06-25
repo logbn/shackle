@@ -157,14 +157,12 @@ func (s *coordination) wait() {
 	s.clock.Sleep(waitPause)
 	s.raft.Barrier(0).Error()
 	s.waiting = false
-	s.active = s.manifest.ClusterActive()
 	s.initialize()
 }
 
 // initialize is called by leaders and followers upon FSM synchronization.
 func (s *coordination) initialize() {
 	if s.active {
-		s.log.Debugf("Node %s Active.", s.nodeID)
 		return
 	}
 	state := s.raft.State()
@@ -218,16 +216,29 @@ func (s *coordination) initialize() {
 			}
 		}
 		// Activate Cluster
-		s.manifest.Status = entity.CLUSTER_STATUS_ACTIVE
-		data := s.manifest.ToJson()
-		ftr := s.raft.Apply(data, raftTimeout)
-		err = ftr.Error()
-		if err != nil {
-			err = fmt.Errorf("Error activating cluster: %s", err.Error())
+		if s.manifest.ClusterAllocating() {
+			s.manifest.Status = entity.CLUSTER_STATUS_ACTIVE
+			data := s.manifest.ToJson()
+			ftr := s.raft.Apply(data, raftTimeout)
+			err = ftr.Error()
+			if err != nil {
+				err = fmt.Errorf("Error activating cluster: %s", err.Error())
+				return
+			}
+			s.log.Debugf("%s Cluster Activated. %s", s.nodeID, s.manifest.ToJson())
+		}
+		// Set status to active
+		if s.manifest.ClusterActive() && node.Allocated() {
+			_, err := s.setNodeStatus(s.nodeID, entity.CLUSTER_NODE_STATUS_ACTIVE)
+			if err != nil {
+				fmt.Errorf("Error updating node status to Active: %s", err.Error())
+			}
 			return
 		}
-		s.log.Debugf("%s Cluster Activated. %s", s.nodeID, s.manifest.ToJson())
-		s.active = true
+		if node.Active() {
+			s.log.Infof("Node %s Active.", s.nodeID)
+			s.active = true
+		}
 	} else if state == raft.Follower {
 		// Check manifest to see if leader's data address is represented.
 		leaderAddrIntApi := s.getAddrIntApi(string(s.raft.Leader()))
@@ -238,8 +249,8 @@ func (s *coordination) initialize() {
 		// Check manifest to see if this node's data address is represented & correct.
 		nodeAddrIntApi := s.getAddrIntApi(s.cfg.Node.AddrRaft)
 		if nodeAddrIntApi != s.cfg.Node.AddrIntApi {
-			s.log.Debugf("%s Updating data address", s.nodeID)
 			s.updateNodeData(leaderAddrIntApi)
+			s.log.Debugf("%s Updating data address", s.nodeID)
 			return
 		}
 		// Perform allocation
@@ -250,12 +261,30 @@ func (s *coordination) initialize() {
 				err = fmt.Errorf("Error allocating follower: %s", err.Error())
 				return
 			} else {
-				s.updateNodeStatus(leaderAddrIntApi, entity.CLUSTER_NODE_STATUS_ALLOCATED)
+				err = s.updateNodeStatus(leaderAddrIntApi, entity.CLUSTER_NODE_STATUS_ALLOCATED)
+				if err != nil {
+					fmt.Errorf("Error updating node status to allocated: %s", err.Error())
+				}
 			}
 			return
 		}
-		return
+		// Set status to active
+		if s.manifest.ClusterActive() && node.Allocated() {
+			err := s.updateNodeStatus(leaderAddrIntApi, entity.CLUSTER_NODE_STATUS_ACTIVE)
+			if err != nil {
+				fmt.Errorf("Error updating node status to Active: %s", err.Error())
+			}
+			return
+		}
+		if node.Active() {
+			s.log.Infof("Node %s Active.", s.nodeID)
+			s.active = true
+		}
+		if node.Down() {
+			// Begin recovery
+		}
 	}
+	return
 }
 
 // Apply applies a Raft log entry to the key-value store.
@@ -484,7 +513,6 @@ func (s *coordination) setNodeStatus(nodeID, status string) (updated bool, err e
 		err = fmt.Errorf("Error updating node status: %s %s %s", nodeID, status, err.Error())
 		return
 	}
-	s.log.Debugf("%s Status set: %s %s", s.nodeID, nodeID, status)
 
 	return true, nil
 }
