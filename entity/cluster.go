@@ -2,7 +2,11 @@ package entity
 
 import (
 	"encoding/json"
+	"fmt"
+	"math"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 const (
@@ -11,6 +15,7 @@ const (
 	CLUSTER_STATUS_ACTIVE       = "active"
 
 	CLUSTER_NODE_STATUS_INITIALIZING = "initializing"
+	CLUSTER_NODE_STATUS_ALLOCATED    = "allocated"
 	CLUSTER_NODE_STATUS_ACTIVE       = "active"
 	CLUSTER_NODE_STATUS_DOWN         = "down"
 	CLUSTER_NODE_STATUS_RECOVERING   = "recovering"
@@ -55,6 +60,7 @@ type ClusterCatalog struct {
 
 type ClusterNode struct {
 	ID         string            `json:"id"`
+	Status     string            `json:"status"`
 	AddrRaft   string            `json:"addr_raft"`
 	AddrIntApi string            `json:"addr_int_api"`
 	Meta       map[string]string `json:"meta"`
@@ -62,16 +68,15 @@ type ClusterNode struct {
 }
 
 type ClusterVNode struct {
-	ID       string `json:"id"`
-	Node     int    `json:"node"`
-	Capacity int    `json:"cap"`
+	ID   string `json:"id"`
+	Node string `json:"node"`
 }
 
 type ClusterPartition struct {
-	Prefix     int   `json:"p"`
-	Master     int   `json:"m"`
-	Replicas   []int `json:"r"`
-	Surrogates []int `json:"s"`
+	Prefix     int      `json:"p"`
+	Master     string   `json:"m"`
+	Replicas   []string `json:"r"`
+	Surrogates []string `json:"s"`
 }
 
 type ClusterMigration struct {
@@ -88,7 +93,6 @@ func (e *ClusterManifest) ToJson() (data []byte) {
 	data, _ = json.Marshal(e)
 	return
 }
-
 func (e *ClusterManifest) FromJson(data []byte) error {
 	return json.Unmarshal(data, e)
 }
@@ -109,6 +113,109 @@ func (e *ClusterManifest) GetNodeByAddrRaft(addrRaft string) *ClusterNode {
 	}
 	return nil
 }
+
+func (e *ClusterManifest) ClusterInitializing() bool {
+	return e.Status == CLUSTER_STATUS_INITIALIZING
+}
+func (e *ClusterManifest) ClusterAllocating() bool {
+	return e.Status == CLUSTER_STATUS_ALLOCATING
+}
 func (e *ClusterManifest) ClusterActive() bool {
 	return e.Status == CLUSTER_STATUS_ACTIVE
+}
+
+func (e *ClusterNode) Initializing() bool {
+	return e.Status == CLUSTER_NODE_STATUS_INITIALIZING
+}
+func (e *ClusterNode) Allocated() bool {
+	return e.Status == CLUSTER_NODE_STATUS_ALLOCATED
+}
+func (e *ClusterNode) Active() bool {
+	return e.Status == CLUSTER_NODE_STATUS_ACTIVE
+}
+
+// Allocate is called during cluster initialization to prescribe vnodes, partition configuration and replica placement.
+// Current allocation algorithm is naive.
+// - Distributes partitions evenly across nodes rather than vnodes
+// - Does not implement Vary semantics to prevent duplicate partition replica distibution within a boundary (ie. aws_zone)
+// - Only allocates initial state and has no concept of shard redistribution or data locality
+func (e *ClusterManifest) Allocate(partitionCount int) (err error) {
+	if e.Status != CLUSTER_STATUS_INITIALIZING {
+		err = fmt.Errorf("Cluster is not in initialization state")
+		return
+	}
+	var nodeCount = len(e.Catalog.Nodes)
+	if nodeCount < 1 {
+		err = fmt.Errorf("Cluster nodes not yet defined")
+		return
+	}
+	if e.Catalog.VNodes != nil {
+		err = fmt.Errorf("Cluster vnodes already allocated")
+		return
+	}
+	if e.Catalog.Partitions != nil {
+		err = fmt.Errorf("Cluster partitions already allocated")
+		return
+	}
+	var log2pc = math.Log2(float64(partitionCount))
+	if math.Trunc(log2pc) != log2pc {
+		err = fmt.Errorf("Cluster partition count must be power of 2")
+		return
+	}
+	// Limit replica count to node count
+	// Distributing 3 replicas across 2 nodes is nonsensical.
+	var k = e.Catalog.Replicas
+	if k > nodeCount {
+		k = nodeCount
+	}
+	var nodeMasters = make([][]int, nodeCount)
+	var nodeReplicas = make([][]int, nodeCount)
+	var n int
+	var lastMaster int
+	for i := 0; i < partitionCount; i++ {
+		for j := 0; j < k; j++ {
+			if j == 0 {
+				if i != 0 && n%nodeCount == lastMaster {
+					n++
+				}
+				nodeMasters[n%nodeCount] = append(nodeMasters[n%nodeCount], i)
+				lastMaster = n % nodeCount
+			} else {
+				nodeReplicas[n%nodeCount] = append(nodeReplicas[n%nodeCount], i)
+			}
+			n++
+		}
+	}
+	var nodeVNodes = make([][]ClusterVNode, nodeCount)
+	for i, n := range e.Catalog.Nodes {
+		nodeVNodes[i] = []ClusterVNode{}
+		for j := 0; j < n.VNodeCount; j++ {
+			nodeVNodes[i] = append(nodeVNodes[i], ClusterVNode{
+				ID:   uuid.New().String(),
+				Node: n.ID,
+			})
+		}
+	}
+	var partitions = make([]ClusterPartition, partitionCount)
+	for i := 0; i < partitionCount; i++ {
+		partitions[i] = ClusterPartition{
+			Prefix: i,
+		}
+	}
+	for i := range e.Catalog.Nodes {
+		var masters int
+		var vnn = len(nodeVNodes[i])
+		for j, p := range nodeMasters[i] {
+			partitions[p].Master = nodeVNodes[i][j%vnn].ID
+			masters++
+		}
+		for j, p := range nodeReplicas[i] {
+			partitions[p].Replicas = append(partitions[p].Replicas, nodeVNodes[i][(masters+j)%vnn].ID)
+		}
+	}
+	for i := range e.Catalog.Nodes {
+		e.Catalog.VNodes = append(e.Catalog.VNodes, nodeVNodes[i]...)
+	}
+	e.Catalog.Partitions = partitions
+	return
 }

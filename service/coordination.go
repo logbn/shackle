@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/benbjohnson/clock"
 	"github.com/hashicorp/raft"
 	"github.com/hashicorp/raft-boltdb"
 
@@ -24,6 +25,7 @@ import (
 const (
 	retainSnapshotCount = 2
 	raftTimeout         = 10 * time.Second
+	waitPause           = 100 * time.Millisecond
 )
 
 type Coordination interface {
@@ -47,6 +49,7 @@ type coordination struct {
 	obsChan      chan raft.Observation
 	raft         *raft.Raft
 	waiting      bool
+	clock        clock.Clock
 }
 
 // NewCoordination returns a coordination service
@@ -96,6 +99,7 @@ func NewCoordination(
 		manifest:     &entity.ClusterManifest{},
 		cfg:          cfg.Cluster,
 		intApiClient: iac,
+		clock:        clock.New(),
 	}
 	s.raft, err = raft.NewRaft(config, s, logStore, stableStore, snapshots, transport)
 	if err != nil {
@@ -148,9 +152,10 @@ func (s *coordination) GetClusterManifest() (status entity.ClusterManifest, err 
 
 // wait uses barrier to call initialize after FSM sync
 func (s *coordination) wait() {
-	s.raft.Barrier(0).Error()
 	s.initmutex.Lock()
 	defer s.initmutex.Unlock()
+	s.clock.Sleep(waitPause)
+	s.raft.Barrier(0).Error()
 	s.waiting = false
 	s.active = s.manifest.ClusterActive()
 	s.initialize()
@@ -159,7 +164,7 @@ func (s *coordination) wait() {
 // initialize is called by leaders and followers upon FSM synchronization.
 func (s *coordination) initialize() {
 	if s.active {
-		s.log.Debugf("%s Node Active.", s.nodeID)
+		s.log.Debugf("Node %s Active.", s.nodeID)
 		return
 	}
 	state := s.raft.State()
@@ -170,14 +175,48 @@ func (s *coordination) initialize() {
 			s.log.Errorf(err.Error())
 			return
 		}
-		// Stop if any nodes have not yet reported their addrIntApi
+		// Stop if any nodes have not yet reported meta
 		for _, node := range s.manifest.Catalog.Nodes {
 			if node.AddrIntApi == "" {
 				return
 			}
 		}
-		// Begin allocation
-
+		// Schedule allocation
+		if s.manifest.ClusterInitializing() {
+			err := s.manifest.Allocate(s.cfg.Partitions)
+			if err != nil {
+				s.log.Errorf(err.Error())
+				return
+			}
+			s.manifest.Status = entity.CLUSTER_STATUS_ALLOCATING
+			data := s.manifest.ToJson()
+			ftr := s.raft.Apply(data, raftTimeout)
+			err = ftr.Error()
+			if err != nil {
+				err = fmt.Errorf("Error activating cluster: %s", err.Error())
+				return
+			}
+			s.log.Debugf("%s Cluster Allocating.", s.nodeID)
+			return
+		}
+		// Perform allocation
+		node := s.manifest.GetNodeByID(s.nodeID)
+		if s.manifest.ClusterAllocating() && node.Initializing() {
+			err := s.allocate()
+			if err != nil {
+				err = fmt.Errorf("Error allocating leader: %s", err.Error())
+				return
+			} else {
+				s.setNodeStatus(s.nodeID, entity.CLUSTER_NODE_STATUS_ALLOCATED)
+			}
+			return
+		}
+		// Stop if any nodes have not yet confirmed allocation
+		for _, node := range s.manifest.Catalog.Nodes {
+			if node.Initializing() {
+				return
+			}
+		}
 		// Activate Cluster
 		s.manifest.Status = entity.CLUSTER_STATUS_ACTIVE
 		data := s.manifest.ToJson()
@@ -201,6 +240,18 @@ func (s *coordination) initialize() {
 		if nodeAddrIntApi != s.cfg.Node.AddrIntApi {
 			s.log.Debugf("%s Updating data address", s.nodeID)
 			s.updateNodeData(leaderAddrIntApi)
+			return
+		}
+		// Perform allocation
+		node := s.manifest.GetNodeByID(s.nodeID)
+		if s.manifest.ClusterAllocating() && node.Initializing() {
+			err := s.allocate()
+			if err != nil {
+				err = fmt.Errorf("Error allocating follower: %s", err.Error())
+				return
+			} else {
+				s.updateNodeStatus(leaderAddrIntApi, entity.CLUSTER_NODE_STATUS_ALLOCATED)
+			}
 			return
 		}
 		return
@@ -269,6 +320,7 @@ func (s *coordination) initializeManifest() (err error) {
 		nodes[i] = entity.ClusterNode{
 			ID:       string(srv.ID),
 			AddrRaft: string(srv.Address),
+			Status:   entity.CLUSTER_NODE_STATUS_INITIALIZING,
 		}
 	}
 	s.manifest = &entity.ClusterManifest{
@@ -288,9 +340,14 @@ func (s *coordination) initializeManifest() (err error) {
 		return
 	}
 	s.log.Debugf("%s Manifest Initialized %s", s.nodeID, string(s.manifest.ToJson()))
-	go s.wait()
 
 	return nil
+}
+
+// Initialize vnodes. Special operation of the persistence service.
+func (s *coordination) allocate() (err error) {
+	s.log.Debugf("%s Allocating", s.nodeID)
+	return
 }
 
 // Start starts the service
@@ -383,10 +440,51 @@ func (s *coordination) setNodeMeta(nodeID string, addrIntApi string, meta map[st
 	ftr := s.raft.Apply(s.manifest.ToJson(), raftTimeout)
 	err = ftr.Error()
 	if err != nil {
-		err = fmt.Errorf("Error updating data address: %s", err.Error())
+		err = fmt.Errorf("Error updating internal api address: %s", err.Error())
 		return
 	}
-	s.log.Debugf("%s Data address set. %s = %s", s.nodeID, nodeID, addrIntApi)
+	s.log.Debugf("%s Internal API address set. %s = %s", s.nodeID, nodeID, addrIntApi)
+
+	return true, nil
+}
+
+// Makes GRPC call to leader to update node meta
+func (s *coordination) updateNodeStatus(leaderAddrIntApi, status string) (err error) {
+	c, err := s.intApiClient.Get(leaderAddrIntApi)
+	if err != nil {
+		return
+	}
+	_, err = c.NodeStatusUpdate(context.Background(), &intapi.NodeStatusUpdateRequest{
+		Id:     s.nodeID,
+		Status: status,
+	})
+	return
+}
+
+// Receives GRPC call for node status update
+func (s *coordination) NodeStatusUpdate(ctx context.Context, req *intapi.NodeStatusUpdateRequest) (*intapi.NodeUpdateReply, error) {
+	success, err := s.setNodeStatus(req.Id, req.Status)
+	return &intapi.NodeUpdateReply{Success: success}, err
+}
+
+// Sets node status on leader applying manifest changes if altered
+func (s *coordination) setNodeStatus(nodeID, status string) (updated bool, err error) {
+	n := s.manifest.GetNodeByID(nodeID)
+	if n == nil {
+		err = fmt.Errorf("Node not found in setNodeStatus %s", nodeID)
+		return
+	}
+	if n.Status == status {
+		return
+	}
+	n.Status = status
+	ftr := s.raft.Apply(s.manifest.ToJson(), raftTimeout)
+	err = ftr.Error()
+	if err != nil {
+		err = fmt.Errorf("Error updating node status: %s %s %s", nodeID, status, err.Error())
+		return
+	}
+	s.log.Debugf("%s Status set: %s %s", s.nodeID, nodeID, status)
 
 	return true, nil
 }

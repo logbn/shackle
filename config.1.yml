@@ -22,6 +22,8 @@ cluster:
   pepper: sriracha
   replicas: 3
   surrogates: 1
+  vary:
+    - zone
   node:
     id: 1
     raft_dir: /var/lib/shackle/raft1

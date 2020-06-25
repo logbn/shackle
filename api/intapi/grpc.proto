@@ -7,6 +7,9 @@ package intapi;
 service Coordination {
 	// NodeUpdate is used during cluster initialization to ensure leader has correct follower grpc address
 	rpc NodeUpdate (NodeUpdateRequest) returns (NodeUpdateReply) {}
+
+	// NodeStatusUpdate is used to update a node's status
+	rpc NodeStatusUpdate (NodeStatusUpdateRequest) returns (NodeUpdateReply) {}
 }
 
 // Node update request
@@ -17,6 +20,13 @@ message NodeUpdateRequest {
   uint32 vNodeCount = 4;
 }
 
+// Node update reply
 message NodeUpdateReply {
   bool success = 1;
+}
+
+// Node status update request
+message NodeStatusUpdateRequest {
+  string id = 1;
+  string status = 2;
 }
