@@ -37,12 +37,12 @@ func NewCluster(cfg config.App, log log.Logger) (*Cluster, error) {
 		return nil, fmt.Errorf("Hash service misconfigured - %s", err.Error())
 	}
 	// service.Coordination
-	svcCoordination, err := service.NewCoordination(&cfg, log, coordinationClient)
+	svcCoordination, initChan, err := service.NewCoordination(&cfg, log, coordinationClient)
 	if svcCoordination == nil || err != nil {
 		return nil, fmt.Errorf("Coordination service misconfigured - %s", err.Error())
 	}
 	// service.Persistence
-	svcPersistence, err := service.NewPersistence(&cfg, repo.NewHash, log)
+	svcPersistence, err := service.NewPersistence(&cfg, log, repo.NewHash)
 	if svcPersistence == nil || err != nil {
 		return nil, fmt.Errorf("Persistence service misconfigured - %s", err.Error())
 	}
@@ -58,7 +58,7 @@ func NewCluster(cfg config.App, log log.Logger) (*Cluster, error) {
 	}
 
 	// cluster.Node
-	node, err := cluster.NewNode(cfg, log, svcHash, svcCoordination, svcPersistence, svcPropagation, svcDelegation)
+	node, err := cluster.NewNode(cfg, log, svcHash, svcCoordination, svcPersistence, svcPropagation, svcDelegation, initChan)
 	if node == nil || err != nil {
 		return nil, fmt.Errorf("Node misconfigured - %s", err.Error())
 	}

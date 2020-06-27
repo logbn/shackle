@@ -25,11 +25,11 @@ func TestNewPersistence(t *testing.T) {
 		Repo: config.Repo{
 			Hash: &config.RepoHash{},
 		},
-	}, func(cfg *config.RepoHash, partition int) (r repo.Hash, err error) {
+	}, logger, func(cfg *config.RepoHash, id string, partitions []uint16) (r repo.Hash, err error) {
 		return nil, fmt.Errorf("asdf")
-	}, logger)
-	require.NotNil(t, err)
-	require.Nil(t, svc)
+	})
+	require.Nil(t, err)
+	require.NotNil(t, svc)
 }
 
 func TestPersistence(t *testing.T) {
@@ -41,18 +41,32 @@ func TestPersistence(t *testing.T) {
 		Repo: config.Repo{
 			Hash: &config.RepoHash{},
 		},
-	}, mock.RepoFactoryhash, logger)
+	}, logger, mock.RepoFactoryhash)
 	require.Nil(t, err)
 	require.NotNil(t, svc)
+	manifest := &entity.ClusterManifest{
+		ID:     "test",
+		Status: entity.CLUSTER_STATUS_INITIALIZING,
+		Catalog: entity.ClusterCatalog{
+			Replicas: 1,
+			Nodes: []entity.ClusterNode{{
+				ID:         "self",
+				VNodeCount: 4,
+			}},
+		},
+	}
+	manifest.Allocate(64)
+	svc.Init(manifest.Catalog, "self")
+
 	assert.Equal(t, 4, len(svc.repos))
 
 	t.Run("Lock", func(t *testing.T) {
 		svc.log = &mock.Logger{}
 		items := entity.Batch{
-			entity.BatchItem{0, []byte("LOCKED-000000000")},
-			entity.BatchItem{1, []byte("LOCKED-000000001")},
-			entity.BatchItem{2, []byte("LOCKED-000000002")},
-			entity.BatchItem{3, []byte("LOCKED-000000003")},
+			entity.BatchItem{0, 0, []byte("LOCKED-000000000")},
+			entity.BatchItem{1, 0, []byte("LOCKED-000000001")},
+			entity.BatchItem{2, 0, []byte("LOCKED-000000002")},
+			entity.BatchItem{3, 0, []byte("LOCKED-000000003")},
 		}
 		// Lock Items
 		res, err := svc.Lock(items)
@@ -66,10 +80,10 @@ func TestPersistence(t *testing.T) {
 	t.Run("Lock Error", func(t *testing.T) {
 		svc.log = &mock.Logger{}
 		items := entity.Batch{
-			entity.BatchItem{0, []byte("0LOCKED-00000010")},
-			entity.BatchItem{1, []byte("1ERROR-000000011")},
-			entity.BatchItem{2, []byte("2FATAL-000000012")},
-			entity.BatchItem{3, []byte("3FATAL-000000013")},
+			entity.BatchItem{0, 0x0000, []byte("0LOCKED-00000010")},
+			entity.BatchItem{1, 0x4000, []byte("1ERROR-000000011")},
+			entity.BatchItem{2, 0x8000, []byte("2FATAL-000000012")},
+			entity.BatchItem{3, 0xb000, []byte("3FATAL-000000013")},
 		}
 		// Lock Items
 		res, err := svc.Lock(items)
@@ -83,10 +97,10 @@ func TestPersistence(t *testing.T) {
 	t.Run("Commit", func(t *testing.T) {
 		svc.log = &mock.Logger{}
 		items := entity.Batch{
-			entity.BatchItem{0, []byte("EXISTS-000000020")},
-			entity.BatchItem{1, []byte("EXISTS-000000021")},
-			entity.BatchItem{2, []byte("EXISTS-000000022")},
-			entity.BatchItem{3, []byte("EXISTS-000000023")},
+			entity.BatchItem{0, 0, []byte("EXISTS-000000020")},
+			entity.BatchItem{1, 0, []byte("EXISTS-000000021")},
+			entity.BatchItem{2, 0, []byte("EXISTS-000000022")},
+			entity.BatchItem{3, 0, []byte("EXISTS-000000023")},
 		}
 		// Commit Items
 		res, err := svc.Commit(items)
@@ -100,10 +114,10 @@ func TestPersistence(t *testing.T) {
 	t.Run("Commit Error", func(t *testing.T) {
 		svc.log = &mock.Logger{}
 		items := entity.Batch{
-			entity.BatchItem{0, []byte("0EXISTS-00000030")},
-			entity.BatchItem{1, []byte("1ERROR-000000031")},
-			entity.BatchItem{2, []byte("2FATAL-000000032")},
-			entity.BatchItem{3, []byte("3FATAL-000000033")},
+			entity.BatchItem{0, 0x0000, []byte("0EXISTS-00000030")},
+			entity.BatchItem{1, 0x4000, []byte("1ERROR-000000031")},
+			entity.BatchItem{2, 0x8000, []byte("2FATAL-000000032")},
+			entity.BatchItem{3, 0xb000, []byte("3FATAL-000000033")},
 		}
 		// Commit Items
 		res, err := svc.Commit(items)
@@ -117,10 +131,10 @@ func TestPersistence(t *testing.T) {
 	t.Run("Rollback", func(t *testing.T) {
 		svc.log = &mock.Logger{}
 		items := entity.Batch{
-			entity.BatchItem{0, []byte("EXISTS-000000040")},
-			entity.BatchItem{1, []byte("EXISTS-000000041")},
-			entity.BatchItem{2, []byte("EXISTS-000000042")},
-			entity.BatchItem{3, []byte("EXISTS-000000043")},
+			entity.BatchItem{0, 0, []byte("EXISTS-000000040")},
+			entity.BatchItem{1, 0, []byte("EXISTS-000000041")},
+			entity.BatchItem{2, 0, []byte("EXISTS-000000042")},
+			entity.BatchItem{3, 0, []byte("EXISTS-000000043")},
 		}
 		// Lock Items
 		res, err := svc.Lock(items)
@@ -137,10 +151,10 @@ func TestPersistence(t *testing.T) {
 	t.Run("Rollback Error", func(t *testing.T) {
 		svc.log = &mock.Logger{}
 		items := entity.Batch{
-			entity.BatchItem{0, []byte("0EXISTS-00000050")},
-			entity.BatchItem{1, []byte("1ERROR-000000051")},
-			entity.BatchItem{2, []byte("2FATAL-000000052")},
-			entity.BatchItem{3, []byte("3FATAL-000000053")},
+			entity.BatchItem{0, 0x0000, []byte("0EXISTS-00000050")},
+			entity.BatchItem{1, 0x4000, []byte("1ERROR-000000051")},
+			entity.BatchItem{2, 0x8000, []byte("2FATAL-000000052")},
+			entity.BatchItem{3, 0xb000, []byte("3FATAL-000000053")},
 		}
 		// Lock Items
 		res, err := svc.Lock(items)
@@ -179,7 +193,7 @@ func TestPersistenceSweep(t *testing.T) {
 				LockExpiration: 10 * time.Second,
 			},
 		},
-	}, func(cfg *config.RepoHash, partition int) (r repo.Hash, err error) {
+	}, logger, func(cfg *config.RepoHash, id string, partitions []uint16) (r repo.Hash, err error) {
 		r = &mock.RepoHash{
 			SweepExpiredFunc: func(exp time.Time, limit int) (maxAge time.Duration, notFound, deleted int, err error) {
 				mutex.Lock()
@@ -197,9 +211,22 @@ func TestPersistenceSweep(t *testing.T) {
 			},
 		}
 		return
-	}, logger)
+	})
 	require.Nil(t, err)
 	require.NotNil(t, svc)
+	manifest := &entity.ClusterManifest{
+		ID:     "test",
+		Status: entity.CLUSTER_STATUS_INITIALIZING,
+		Catalog: entity.ClusterCatalog{
+			Replicas: 1,
+			Nodes: []entity.ClusterNode{{
+				ID:         "self",
+				VNodeCount: 4,
+			}},
+		},
+	}
+	manifest.Allocate(64)
+	svc.Init(manifest.Catalog, "self")
 	assert.Equal(t, 4, len(svc.repos))
 	clk := clock.NewMock()
 	svc.clock = clk

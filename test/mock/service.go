@@ -17,6 +17,9 @@ type ServicePersistence struct {
 	mutex     sync.Mutex
 }
 
+func (c *ServicePersistence) Init(cat entity.ClusterCatalog, nodeID string) (err error) {
+	return
+}
 func (m *ServicePersistence) Lock(batch entity.Batch) (res []int8, err error) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
@@ -71,9 +74,9 @@ func (m *ServicePersistence) Stop() {
 
 type ServiceHash struct{}
 
-func (h *ServiceHash) Hash(a, b []byte) []byte {
+func (h *ServiceHash) Hash(a, b []byte) ([]byte, uint16) {
 	sha := sha1.Sum(append(a, b...))
-	return sha[:]
+	return sha[:], uint16(0)
 }
 
 type ServiceCoordination struct{}

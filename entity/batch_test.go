@@ -10,17 +10,23 @@ import (
 
 func TestBatchPartitioned(t *testing.T) {
 	b := Batch{
-		BatchItem{0, []byte("0")},
-		BatchItem{1, []byte("1")},
-		BatchItem{2, []byte("2")},
-		BatchItem{3, []byte("3")},
+		BatchItem{0, 0, []byte("0")},
+		BatchItem{1, 1, []byte("1")},
+		BatchItem{2, 2, []byte("2")},
+		BatchItem{3, 3, []byte("3")},
 	}
-	bp := b.Partitioned(4)
+	bp := b.Partitioned()
 	require.Len(t, bp, 4)
 	for _, b := range bp {
 		assert.Len(t, b, 1)
 	}
-	bp = b.Partitioned(2)
+	b = Batch{
+		BatchItem{0, 0, []byte("0")},
+		BatchItem{1, 1, []byte("1")},
+		BatchItem{2, 0, []byte("2")},
+		BatchItem{3, 1, []byte("3")},
+	}
+	bp = b.Partitioned()
 	require.Len(t, bp, 2)
 	for _, b := range bp {
 		assert.Len(t, b, 2)
@@ -60,7 +66,7 @@ func TestBatchResponseToJson(t *testing.T) {
 
 type mockHasher struct{}
 
-func (h *mockHasher) Hash(a, b []byte) []byte {
+func (h *mockHasher) Hash(a, b []byte) ([]byte, uint16) {
 	sha := sha1.Sum(append(a, b...))
-	return sha[:16]
+	return sha[:16], uint16(0)
 }

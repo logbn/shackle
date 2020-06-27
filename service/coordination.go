@@ -37,7 +37,6 @@ type Coordination interface {
 
 type coordination struct {
 	intapi.UnimplementedCoordinationServer
-	active       bool
 	cfg          *config.Cluster
 	intApiClient intapi.CoordinationClientFinder
 	join         []config.NodeJoin
@@ -47,8 +46,11 @@ type coordination struct {
 	initmutex    sync.Mutex
 	nodeID       string
 	obsChan      chan raft.Observation
+	initChan     chan entity.ClusterCatalog
 	raft         *raft.Raft
+	active       bool
 	waiting      bool
+	allocated    bool
 	clock        clock.Clock
 }
 
@@ -57,7 +59,7 @@ func NewCoordination(
 	cfg *config.App,
 	log log.Logger,
 	iac intapi.CoordinationClientFinder,
-) (s *coordination, err error) {
+) (s *coordination, initChan chan entity.ClusterCatalog, err error) {
 	var (
 		nodeID   = cfg.Cluster.Node.ID
 		addrRaft = cfg.Cluster.Node.AddrRaft
@@ -69,15 +71,16 @@ func NewCoordination(
 	config.LocalID = raft.ServerID(nodeID)
 	addr, err := net.ResolveTCPAddr("tcp", addrRaft)
 	if err != nil {
-		return nil, err
+		return
 	}
 	transport, err := raft.NewTCPTransport(addrRaft, addr, 3, 10*time.Second, os.Stderr)
 	if err != nil {
-		return nil, err
+		return
 	}
 	snapshots, err := raft.NewFileSnapshotStore(raftDir, retainSnapshotCount, os.Stderr)
 	if err != nil {
-		return nil, fmt.Errorf("file snapshot store: %s", err)
+		err = fmt.Errorf("file snapshot store: %s", err)
+		return
 	}
 	var logStore raft.LogStore
 	var stableStore raft.StableStore
@@ -87,7 +90,7 @@ func NewCoordination(
 	} else {
 		boltDB, err := raftboltdb.NewBoltStore(filepath.Join(raftDir, "raft.db"))
 		if err != nil {
-			return nil, fmt.Errorf("new bolt store: %s", err)
+			return nil, nil, fmt.Errorf("new bolt store: %s", err)
 		}
 		logStore = boltDB
 		stableStore = boltDB
@@ -100,10 +103,13 @@ func NewCoordination(
 		cfg:          cfg.Cluster,
 		intApiClient: iac,
 		clock:        clock.New(),
+		initChan:     make(chan entity.ClusterCatalog),
 	}
+	initChan = s.initChan
 	s.raft, err = raft.NewRaft(config, s, logStore, stableStore, snapshots, transport)
 	if err != nil {
-		return nil, fmt.Errorf("new raft: %s", err)
+		err = fmt.Errorf("new raft: %s", err)
+		return
 	}
 	if raftSolo {
 		s.raft.BootstrapCluster(raft.Configuration{
@@ -117,9 +123,8 @@ func NewCoordination(
 	return
 }
 
-// Join joins a node, identified by nodeID and located at addr, to this store.
+// Join a node to the cluster.
 func (s *coordination) Join(nodeID, addr string) error {
-	s.log.Debugf("received join request for remote node %s at %s", nodeID, addr)
 	configFuture := s.raft.GetConfiguration()
 	if err := configFuture.Error(); err != nil {
 		s.log.Errorf("failed to get raft configuration: %v", err)
@@ -205,8 +210,14 @@ func (s *coordination) initialize() {
 				err = fmt.Errorf("Error allocating leader: %s", err.Error())
 				return
 			} else {
-				s.setNodeStatus(s.nodeID, entity.CLUSTER_NODE_STATUS_ALLOCATED)
+				_, err = s.setNodeStatus(s.nodeID, entity.CLUSTER_NODE_STATUS_ALLOCATED)
+				if err != nil {
+					err = fmt.Errorf("Error allocating follower: %s", err.Error())
+				} else {
+					s.log.Debugf("%s Allocated", s.nodeID)
+				}
 			}
+			s.allocated = true
 			return
 		}
 		// Stop if any nodes have not yet confirmed allocation
@@ -236,6 +247,13 @@ func (s *coordination) initialize() {
 			return
 		}
 		if node.Active() {
+			if !s.allocated {
+				err := s.allocate()
+				if err != nil {
+					err = fmt.Errorf("Error allocating follower: %s", err.Error())
+					return
+				}
+			}
 			s.log.Infof("Node %s Active.", s.nodeID)
 			s.active = true
 		}
@@ -264,8 +282,11 @@ func (s *coordination) initialize() {
 				err = s.updateNodeStatus(leaderAddrIntApi, entity.CLUSTER_NODE_STATUS_ALLOCATED)
 				if err != nil {
 					fmt.Errorf("Error updating node status to allocated: %s", err.Error())
+				} else {
+					s.log.Debugf("%s Allocated", s.nodeID)
 				}
 			}
+			s.allocated = true
 			return
 		}
 		// Set status to active
@@ -277,6 +298,13 @@ func (s *coordination) initialize() {
 			return
 		}
 		if node.Active() {
+			if !s.allocated {
+				err := s.allocate()
+				if err != nil {
+					err = fmt.Errorf("Error allocating follower: %s", err.Error())
+					return
+				}
+			}
 			s.log.Infof("Node %s Active.", s.nodeID)
 			s.active = true
 		}
@@ -375,7 +403,7 @@ func (s *coordination) initializeManifest() (err error) {
 
 // Initialize vnodes. Special operation of the persistence service.
 func (s *coordination) allocate() (err error) {
-	s.log.Debugf("%s Allocating", s.nodeID)
+	s.initChan <- s.manifest.Catalog
 	return
 }
 
@@ -397,25 +425,10 @@ func (s *coordination) Start() {
 					}
 					// Wait for FSM log replay
 					s.raft.Barrier(0).Error()
-					s.startObserver()
 					s.initializeManifest()
 				} else {
 					s.log.Debugf("%s Became Follower", s.nodeID)
 				}
-			}
-		}
-	}()
-}
-
-func (s *coordination) startObserver() {
-	s.obsChan = make(chan raft.Observation)
-	s.raft.RegisterObserver(raft.NewObserver(s.obsChan, true, nil))
-	go func() {
-		for {
-			select {
-			case o := <-s.obsChan:
-				// Main event loop for responding to changes in cluster state
-				s.log.Debugf("OBS - %#v", o.Data)
 			}
 		}
 	}()
@@ -518,6 +531,7 @@ func (s *coordination) setNodeStatus(nodeID, status string) (updated bool, err e
 }
 
 func (s *coordination) Stop() {
+	close(s.initChan)
 }
 
 type fsmSnapshot []byte

@@ -23,7 +23,7 @@ const (
 )
 
 type hasher interface {
-	Hash(item, bucket []byte) []byte
+	Hash(item, bucket []byte) (hash []byte, partition uint16)
 }
 
 var batchParserPool = sync.Pool{New: func() interface{} { return new(fastjson.Parser) }}
@@ -31,21 +31,16 @@ var batchParserPool = sync.Pool{New: func() interface{} { return new(fastjson.Pa
 // Batch represents an incoming batch of items to lock
 type Batch []BatchItem
 type BatchItem struct {
-	N    int
-	Hash []byte
+	N         int
+	Partition uint16
+	Hash      []byte
 }
 
-// Partitioned splits a batch into a map of sub-batches keyed by partition number
-func (b Batch) Partitioned(n int) map[int]Batch {
-	batches := make(map[int]Batch)
+// Partitioned splits a batch into a map of sub-batches keyed by partition prefix
+func (b Batch) Partitioned() map[uint16]Batch {
+	batches := make(map[uint16]Batch)
 	for _, item := range b {
-		// TODO - Implement a bitmasked prefix partition strategy. mod(n) creates poorly ordered partitions.
-		// ex. When using a prefix, splitting a partition requires scanning only the first half the shard.
-		p := int(item.Hash[0]) % n
-		if _, ok := batches[p]; !ok {
-			batches[p] = Batch{}
-		}
-		batches[p] = append(batches[p], item)
+		batches[item.Partition] = append(batches[item.Partition], item)
 	}
 	return batches
 }
@@ -79,8 +74,11 @@ func BatchFromJson(body, bucket []byte, h hasher) (ent Batch, err error) {
 		return
 	}
 	ent = make(Batch, len(values))
+	var hash []byte
+	var partition uint16
 	for i, sv := range values {
-		ent[i] = BatchItem{i, h.Hash(sv.GetStringBytes(), bucket)}
+		hash, partition = h.Hash(sv.GetStringBytes(), bucket)
+		ent[i] = BatchItem{i, partition, hash}
 	}
 	return
 }

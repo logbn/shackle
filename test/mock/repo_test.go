@@ -12,18 +12,18 @@ import (
 )
 
 func TestRepoFactoryhash(t *testing.T) {
-	repo, err := RepoFactoryhash(&config.RepoHash{}, 0)
+	repo, err := RepoFactoryhash(&config.RepoHash{}, "vnode1", []uint16{0})
 	require.Nil(t, err)
 	require.NotNil(t, repo)
 	batch1 := entity.Batch{
-		entity.BatchItem{0, []byte("EXISTS")},
-		entity.BatchItem{1, []byte("LOCKED")},
-		entity.BatchItem{2, []byte("BUSY")},
-		entity.BatchItem{3, []byte("ERROR")},
-		entity.BatchItem{4, []byte("nonsense")},
+		entity.BatchItem{0, 0, []byte("EXISTS")},
+		entity.BatchItem{1, 0, []byte("LOCKED")},
+		entity.BatchItem{2, 0, []byte("BUSY")},
+		entity.BatchItem{3, 0, []byte("ERROR")},
+		entity.BatchItem{4, 0, []byte("nonsense")},
 	}
 	batch2 := append(batch1, entity.Batch{
-		entity.BatchItem{5, []byte("FATAL")},
+		entity.BatchItem{5, 0, []byte("FATAL")},
 	}...)
 	test := func(res []int8) {
 		assert.Equal(t, entity.ITEM_EXISTS, res[0])

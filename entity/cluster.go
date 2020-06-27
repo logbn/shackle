@@ -47,6 +47,39 @@ type ClusterManifest struct {
 	Migrations []ClusterMigration `json:"migrations"`
 }
 
+func (e *ClusterManifest) ClusterInitializing() bool {
+	return e.Status == CLUSTER_STATUS_INITIALIZING
+}
+func (e *ClusterManifest) ClusterAllocating() bool {
+	return e.Status == CLUSTER_STATUS_ALLOCATING
+}
+func (e *ClusterManifest) ClusterActive() bool {
+	return e.Status == CLUSTER_STATUS_ACTIVE
+}
+func (e *ClusterManifest) ToJson() (data []byte) {
+	data, _ = json.Marshal(e)
+	return
+}
+func (e *ClusterManifest) FromJson(data []byte) error {
+	return json.Unmarshal(data, e)
+}
+func (e *ClusterManifest) GetNodeByID(nodeID string) *ClusterNode {
+	for i, n := range e.Catalog.Nodes {
+		if n.ID == nodeID {
+			return &e.Catalog.Nodes[i]
+		}
+	}
+	return nil
+}
+func (e *ClusterManifest) GetNodeByAddrRaft(addrRaft string) *ClusterNode {
+	for i, n := range e.Catalog.Nodes {
+		if n.AddrRaft == addrRaft {
+			return &e.Catalog.Nodes[i]
+		}
+	}
+	return nil
+}
+
 type ClusterCatalog struct {
 	Version    string             `json:"version"`
 	Replicas   int                `json:"k"`
@@ -67,16 +100,32 @@ type ClusterNode struct {
 	VNodeCount int               `json:"vnode_count"`
 }
 
+func (e *ClusterNode) Initializing() bool {
+	return e.Status == CLUSTER_NODE_STATUS_INITIALIZING
+}
+func (e *ClusterNode) Allocated() bool {
+	return e.Status == CLUSTER_NODE_STATUS_ALLOCATED
+}
+func (e *ClusterNode) Active() bool {
+	return e.Status == CLUSTER_NODE_STATUS_ACTIVE
+}
+func (e *ClusterNode) Down() bool {
+	return e.Status == CLUSTER_NODE_STATUS_DOWN
+}
+func (e *ClusterNode) Recovering() bool {
+	return e.Status == CLUSTER_NODE_STATUS_RECOVERING
+}
+
 type ClusterVNode struct {
 	ID   string `json:"id"`
 	Node string `json:"node"`
 }
 
 type ClusterPartition struct {
-	Prefix     int      `json:"p"`
-	Master     string   `json:"m"`
-	Replicas   []string `json:"r"`
-	Surrogates []string `json:"s"`
+	Prefix     uint16 `json:"p"`
+	Master     int    `json:"m"`
+	Replicas   []int  `json:"r"`
+	Surrogates []int  `json:"s"`
 }
 
 type ClusterMigration struct {
@@ -87,51 +136,6 @@ type ClusterMigration struct {
 	StartAfter time.Time      `json:"start_after"`
 	From       ClusterCatalog `json:"from"`
 	To         ClusterCatalog `json:"to"`
-}
-
-func (e *ClusterManifest) ToJson() (data []byte) {
-	data, _ = json.Marshal(e)
-	return
-}
-func (e *ClusterManifest) FromJson(data []byte) error {
-	return json.Unmarshal(data, e)
-}
-
-func (e *ClusterManifest) GetNodeByID(nodeID string) *ClusterNode {
-	for i, n := range e.Catalog.Nodes {
-		if n.ID == nodeID {
-			return &e.Catalog.Nodes[i]
-		}
-	}
-	return nil
-}
-func (e *ClusterManifest) GetNodeByAddrRaft(addrRaft string) *ClusterNode {
-	for i, n := range e.Catalog.Nodes {
-		if n.AddrRaft == addrRaft {
-			return &e.Catalog.Nodes[i]
-		}
-	}
-	return nil
-}
-
-func (e *ClusterManifest) ClusterInitializing() bool {
-	return e.Status == CLUSTER_STATUS_INITIALIZING
-}
-func (e *ClusterManifest) ClusterAllocating() bool {
-	return e.Status == CLUSTER_STATUS_ALLOCATING
-}
-func (e *ClusterManifest) ClusterActive() bool {
-	return e.Status == CLUSTER_STATUS_ACTIVE
-}
-
-func (e *ClusterNode) Initializing() bool {
-	return e.Status == CLUSTER_NODE_STATUS_INITIALIZING
-}
-func (e *ClusterNode) Allocated() bool {
-	return e.Status == CLUSTER_NODE_STATUS_ALLOCATED
-}
-func (e *ClusterNode) Active() bool {
-	return e.Status == CLUSTER_NODE_STATUS_ACTIVE
 }
 
 // Allocate is called during cluster initialization to prescribe vnodes, partition configuration and replica placement.
@@ -188,6 +192,10 @@ func (e *ClusterManifest) Allocate(partitionCount int) (err error) {
 	}
 	var nodeVNodes = make([][]ClusterVNode, nodeCount)
 	for i, n := range e.Catalog.Nodes {
+		if n.VNodeCount == 0 {
+			err = fmt.Errorf("VNode count cannot be 0 for node %s", n.ID)
+			return
+		}
 		nodeVNodes[i] = []ClusterVNode{}
 		for j := 0; j < n.VNodeCount; j++ {
 			nodeVNodes[i] = append(nodeVNodes[i], ClusterVNode{
@@ -196,21 +204,37 @@ func (e *ClusterManifest) Allocate(partitionCount int) (err error) {
 			})
 		}
 	}
+	/*
+		Bitwise Key Prefix Partitioning Scheme
+
+		https://play.golang.org/p/Lm_Qtq8z06h
+
+		partitions := 4096
+		bits := int(math.Log2(float64(partitions)))
+		mask := uint16(math.MaxUint16 >> (16 - bits) << (16 - bits))
+
+		key := []byte("test")
+
+		partition := binary.BigEndian.Uint16(key[:2]) & mask
+
+		fmt.Printf("Key Prefix: %x, Partition: %04x, Number: %d\n", key[:2], partition, partition >> (16 - bits))
+	*/
+	var bits = int(math.Log2(float64(partitionCount)))
 	var partitions = make([]ClusterPartition, partitionCount)
 	for i := 0; i < partitionCount; i++ {
 		partitions[i] = ClusterPartition{
-			Prefix: i,
+			Prefix: uint16(i << (16 - bits)),
 		}
 	}
-	for i := range e.Catalog.Nodes {
+	for i, n := range e.Catalog.Nodes {
 		var masters int
 		var vnn = len(nodeVNodes[i])
 		for j, p := range nodeMasters[i] {
-			partitions[p].Master = nodeVNodes[i][j%vnn].ID
+			partitions[p].Master = i*n.VNodeCount + j%vnn
 			masters++
 		}
 		for j, p := range nodeReplicas[i] {
-			partitions[p].Replicas = append(partitions[p].Replicas, nodeVNodes[i][(masters+j)%vnn].ID)
+			partitions[p].Replicas = append(partitions[p].Replicas, i*n.VNodeCount+(masters+j)%vnn)
 		}
 	}
 	for i := range e.Catalog.Nodes {

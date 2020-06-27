@@ -112,19 +112,19 @@ type manifestStats struct {
 }
 
 func calcManifestStats(m *ClusterManifest) (s manifestStats) {
-	var vnodeMasters = map[string]int{}
-	var vnodeReplicas = map[string]int{}
+	var vnodeMasters = map[int]int{}
+	var vnodeReplicas = map[int]int{}
 	for _, p := range m.Catalog.Partitions {
 		vnodeMasters[p.Master]++
 		for _, vnid := range p.Replicas {
 			vnodeReplicas[vnid]++
 		}
 	}
-	for _, vn := range m.Catalog.VNodes {
-		if vnodeMasters[vn.ID] == 0 {
+	for i := range m.Catalog.VNodes {
+		if vnodeMasters[i] == 0 {
 			s.masterlessVnodes++
 		}
-		if vnodeReplicas[vn.ID] == 0 {
+		if vnodeReplicas[i] == 0 {
 			s.replicalessVnodes++
 		}
 	}

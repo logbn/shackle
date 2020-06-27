@@ -16,12 +16,14 @@ type Node interface {
 }
 
 type node struct {
+	id              string
 	log             log.Logger
 	svcHash         service.Hash
 	svcCoordination service.Coordination
 	svcPersistence  service.Persistence
 	svcPropagation  service.Propagation
 	svcDelegation   service.Delegation
+	initChan        chan entity.ClusterCatalog
 }
 
 // NewNode returns a new node
@@ -33,8 +35,18 @@ func NewNode(
 	svcPersistence service.Persistence,
 	svcPropagation service.Propagation,
 	svcDelegation service.Delegation,
+	initChan chan entity.ClusterCatalog,
 ) (*node, error) {
-	return &node{log, svcHash, svcCoordination, svcPersistence, svcPropagation, svcDelegation}, nil
+	return &node{
+		cfg.Cluster.Node.ID,
+		log,
+		svcHash,
+		svcCoordination,
+		svcPersistence,
+		svcPropagation,
+		svcDelegation,
+		initChan,
+	}, nil
 }
 
 func (n *node) Lock(batch entity.Batch) (res []int8, err error) {
@@ -72,6 +84,14 @@ func (n *node) Start() {
 	n.svcDelegation.Start()
 	n.svcPersistence.Start()
 	n.svcPropagation.Start()
+	go func() {
+		for {
+			select {
+			case cat := <-n.initChan:
+				n.svcPersistence.Init(cat, n.id)
+			}
+		}
+	}()
 	n.svcCoordination.Start()
 }
 

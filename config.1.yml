@@ -18,7 +18,7 @@ api:
 cluster:
   id: test
   keylength: 16
-  partitions: 16
+  partitions: 1024
   pepper: sriracha
   replicas: 3
   surrogates: 1

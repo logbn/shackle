@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -14,6 +15,7 @@ import (
 )
 
 type Persistence interface {
+	Init(cat entity.ClusterCatalog, nodeID string) error
 	Lock(batch entity.Batch) (res []int8, err error)
 	Rollback(batch entity.Batch) (res []int8, err error)
 	Commit(batch entity.Batch) (res []int8, err error)
@@ -22,10 +24,12 @@ type Persistence interface {
 }
 
 type persistence struct {
-	clock         clock.Clock
-	partitions    int
-	repos         map[int]repo.Hash
 	log           log.Logger
+	clock         clock.Clock
+	partitions    map[uint16]repo.Hash
+	repos         map[string]repo.Hash
+	repoFactory   repo.FactoryHash
+	repoCfg       *config.RepoHash
 	keyExp        time.Duration
 	lockExp       time.Duration
 	sweepInterval time.Duration
@@ -34,32 +38,65 @@ type persistence struct {
 }
 
 // NewPersistence returns a persistence service
-func NewPersistence(cfg *config.App, rfh repo.FactoryHash, log log.Logger) (r *persistence, err error) {
-	var (
-		partitions = cfg.Cluster.Partitions
-		repos      = map[int]repo.Hash{}
-	)
-	if partitions < 1 {
-		partitions = 1
+func NewPersistence(cfg *config.App, log log.Logger, rf repo.FactoryHash) (r *persistence, err error) {
+	return &persistence{
+		log:           log,
+		clock:         clock.New(),
+		partitions:    map[uint16]repo.Hash{},
+		repos:         map[string]repo.Hash{},
+		repoFactory:   rf,
+		repoCfg:       cfg.Repo.Hash,
+		keyExp:        cfg.Repo.Hash.KeyExpiration,
+		lockExp:       cfg.Repo.Hash.LockExpiration,
+		sweepInterval: cfg.Repo.Hash.SweepInterval,
+	}, nil
+}
+
+func (c *persistence) Init(cat entity.ClusterCatalog, nodeID string) (err error) {
+	var node *entity.ClusterNode
+	for _, n := range cat.Nodes {
+		if n.ID == nodeID {
+			node = &n
+			break
+		}
 	}
-	for i := 0; i < partitions; i++ {
-		repos[i], err = rfh(cfg.Repo.Hash, i)
+	if node == nil {
+		return fmt.Errorf("Node not found in catalog %s", nodeID)
+	}
+	c.repoMutex.Lock()
+	defer c.repoMutex.Unlock()
+	var (
+		vnodeIDs        = map[int]string{}
+		vnodePartitions = map[int][]uint16{}
+	)
+	for i, vn := range cat.VNodes {
+		if vn.Node != nodeID {
+			continue
+		}
+		vnodeIDs[i] = vn.ID
+	}
+	for _, p := range cat.Partitions {
+		if _, ok := vnodeIDs[p.Master]; ok {
+			vnodePartitions[p.Master] = append(vnodePartitions[p.Master], p.Prefix)
+		}
+		for _, i := range p.Replicas {
+			if _, ok := vnodeIDs[i]; ok {
+				vnodePartitions[i] = append(vnodePartitions[i], p.Prefix)
+			}
+		}
+	}
+	var r repo.Hash
+	for i, id := range vnodeIDs {
+		r, err = c.repoFactory(c.repoCfg, id, vnodePartitions[i])
 		if err != nil {
 			return
 		}
+		c.repos[id] = r
+		for _, p := range vnodePartitions[i] {
+			c.partitions[p] = r
+		}
 	}
-
-	return &persistence{
-		clock.New(),
-		partitions,
-		repos,
-		log,
-		cfg.Repo.Hash.KeyExpiration,
-		cfg.Repo.Hash.LockExpiration,
-		cfg.Repo.Hash.SweepInterval,
-		nil,
-		sync.RWMutex{},
-	}, nil
+	return
 }
 
 // Lock determines whether each hash has been seen and locks for processing
@@ -72,10 +109,10 @@ func (c *persistence) Lock(batch entity.Batch) (res []int8, err error) {
 	c.repoMutex.RLock()
 	defer c.repoMutex.RUnlock()
 
-	for k, batch := range batch.Partitioned(c.partitions) {
+	for k, batch := range batch.Partitioned() {
 		wg.Add(1)
-		go func(k int, batch entity.Batch) {
-			r1, err2 := c.repos[k].Lock(batch)
+		go func(k uint16, batch entity.Batch) {
+			r1, err2 := c.partitions[k].Lock(batch)
 			mutex.Lock()
 			if err2 != nil {
 				c.log.Errorf(err2.Error())
@@ -105,10 +142,10 @@ func (c *persistence) Rollback(batch entity.Batch) (res []int8, err error) {
 	c.repoMutex.RLock()
 	defer c.repoMutex.RUnlock()
 
-	for k, batch := range batch.Partitioned(c.partitions) {
+	for k, batch := range batch.Partitioned() {
 		wg.Add(1)
-		go func(k int, batch entity.Batch) {
-			r1, err2 := c.repos[k].Rollback(batch)
+		go func(k uint16, batch entity.Batch) {
+			r1, err2 := c.partitions[k].Rollback(batch)
 			mutex.Lock()
 			if err2 != nil {
 				c.log.Errorf(err2.Error())
@@ -142,10 +179,10 @@ func (c *persistence) Commit(batch entity.Batch) (res []int8, err error) {
 	c.repoMutex.RLock()
 	defer c.repoMutex.RUnlock()
 
-	for k, batch := range batch.Partitioned(c.partitions) {
+	for k, batch := range batch.Partitioned() {
 		wg.Add(1)
-		go func(k int, batch entity.Batch) {
-			r1, err2 := c.repos[k].Commit(batch)
+		go func(k uint16, batch entity.Batch) {
+			r1, err2 := c.partitions[k].Commit(batch)
 			mutex.Lock()
 			if err2 != nil {
 				c.log.Errorf(err2.Error())
@@ -189,14 +226,14 @@ func (c *persistence) Start() {
 				lockexpTime = t.Add(-1 * c.lockExp)
 				// Iterating over a map randomly every tick results in noisy scan, deletion and abandonment metrics
 				// Repos are sorted on every iteration (rather than once) because node shard inventory is dynamic
-				var sorted = make([]int, len(c.repos))
-				sort.Ints(sorted)
+				var sorted = make([]string, len(c.repos))
 				i = 0
 				for k := range c.repos {
 					sorted[i] = k
 					i++
 				}
-				for k := range sorted {
+				sort.Strings(sorted)
+				for _, k := range sorted {
 					if c.keyExp > 0 {
 						// TODO - create expiration sweep limit oracle to perform sweep during periods of low traffic
 						maxAge, notFound, deleted, err := c.repos[k].SweepExpired(keyexpTime, 0)
