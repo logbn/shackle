@@ -30,3 +30,25 @@ message NodeStatusUpdateRequest {
   string id = 1;
   string status = 2;
 }
+
+service Delegation {
+	// Delegate executes a batch operation delegated by another node
+	rpc Delegate (BatchOp) returns (BatchReply) {}
+}
+
+// Batch operation
+message BatchOp {
+  uint32 op = 1;
+  bytes items = 2;
+}
+
+// Batch Reploy
+message BatchReply {
+  string err = 1;
+  bytes res = 2;
+}
+
+service Propagation {
+	// Propagate executes a batch operation propagated by another node
+	rpc Propagate (BatchOp) returns (BatchReply) {}
+}

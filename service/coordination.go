@@ -30,7 +30,8 @@ const (
 
 type Coordination interface {
 	Join(id, addr string) error
-	GetClusterManifest() (entity.ClusterManifest, error)
+	PlanDelegation(entity.Batch) (entity.BatchPlan, error)
+	PlanPropagation(entity.Batch) (entity.BatchPlan, error)
 	Start()
 	Stop()
 }
@@ -42,7 +43,7 @@ type coordination struct {
 	join         []config.NodeJoin
 	log          log.Logger
 	manifest     *entity.ClusterManifest
-	mu           sync.Mutex
+	mu           sync.RWMutex
 	initmutex    sync.Mutex
 	nodeID       string
 	obsChan      chan raft.Observation
@@ -123,6 +124,58 @@ func NewCoordination(
 	return
 }
 
+// Plan batch delegation
+func (s *coordination) PlanDelegation(batch entity.Batch) (plan entity.BatchPlan, err error) {
+	plan = entity.BatchPlan{}
+	var nodeid string
+	var node *entity.ClusterNode
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for p, b := range batch.PartitionIndexed(len(s.manifest.Catalog.Partitions)) {
+		nodeid = s.manifest.Catalog.VNodes[s.manifest.Catalog.Partitions[p].Master].Node
+		if _, ok := plan[nodeid]; !ok {
+			node = s.manifest.GetNodeByID(nodeid)
+			if node == nil {
+				err = fmt.Errorf("Unrecognized partition %04x", p)
+				return
+			}
+			plan[nodeid] = &entity.BatchPlanSegment{
+				NodeAddr: node.AddrIntApi,
+				Batch:    entity.Batch{},
+			}
+		}
+		plan[nodeid].Batch = append(plan[nodeid].Batch, b...)
+	}
+	return
+}
+
+// Plan batch propagation
+func (s *coordination) PlanPropagation(batch entity.Batch) (plan entity.BatchPlan, err error) {
+	plan = entity.BatchPlan{}
+	var nodeid string
+	var node *entity.ClusterNode
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for p, b := range batch.PartitionIndexed(len(s.manifest.Catalog.Partitions)) {
+		for _, vnid := range s.manifest.Catalog.Partitions[p].Replicas {
+			nodeid = s.manifest.Catalog.VNodes[vnid].Node
+			if _, ok := plan[nodeid]; !ok {
+				node = s.manifest.GetNodeByID(nodeid)
+				if node == nil {
+					err = fmt.Errorf("Unrecognized partition %04x", p)
+					return
+				}
+				plan[nodeid] = &entity.BatchPlanSegment{
+					NodeAddr: node.AddrIntApi,
+					Batch:    entity.Batch{},
+				}
+			}
+			plan[nodeid].Batch = append(plan[nodeid].Batch, b...)
+		}
+	}
+	return
+}
+
 // Join a node to the cluster.
 func (s *coordination) Join(nodeID, addr string) error {
 	configFuture := s.raft.GetConfiguration()
@@ -149,10 +202,6 @@ func (s *coordination) Join(nodeID, addr string) error {
 	}
 	s.log.Debugf("node %s at %s joined successfully", nodeID, addr)
 	return nil
-}
-
-func (s *coordination) GetClusterManifest() (status entity.ClusterManifest, err error) {
-	return *s.manifest, nil
 }
 
 // wait uses barrier to call initialize after FSM sync

@@ -26,11 +26,22 @@ type Cluster struct {
 }
 
 func NewCluster(cfg config.App, log log.Logger) (*Cluster, error) {
-	// cluster.CoordinationClientFinder
+	// intapi.CoordinationClientFinder
 	coordinationClient := intapi.NewCoordinationClientFinder()
 	if coordinationClient == nil {
 		return nil, fmt.Errorf("Coordination client finder misconfigured")
 	}
+	// intapi.DelegationClientFinder
+	delegationClient := intapi.NewDelegationClientFinder()
+	if delegationClient == nil {
+		return nil, fmt.Errorf("Delegation client finder misconfigured")
+	}
+	// intapi.PropagationClientFinder
+	propagationClient := intapi.NewPropagationClientFinder()
+	if propagationClient == nil {
+		return nil, fmt.Errorf("Propagation client finder misconfigured")
+	}
+
 	// service.Hash
 	svcHash, err := service.NewHash(&cfg)
 	if svcHash == nil || err != nil {
@@ -46,15 +57,15 @@ func NewCluster(cfg config.App, log log.Logger) (*Cluster, error) {
 	if svcPersistence == nil || err != nil {
 		return nil, fmt.Errorf("Persistence service misconfigured - %s", err.Error())
 	}
-	// service.Propagation
-	svcPropagation, err := service.NewPropagation(&cfg)
-	if svcPropagation == nil || err != nil {
-		return nil, fmt.Errorf("Propagation service misconfigured - %s", err.Error())
-	}
 	// service.Delegation
-	svcDelegation, err := service.NewDelegation(&cfg)
+	svcDelegation, err := service.NewDelegation(&cfg, log, delegationClient)
 	if svcDelegation == nil || err != nil {
 		return nil, fmt.Errorf("Delegation service misconfigured - %s", err.Error())
+	}
+	// service.Propagation
+	svcPropagation, err := service.NewPropagation(&cfg, log, propagationClient)
+	if svcPropagation == nil || err != nil {
+		return nil, fmt.Errorf("Propagation service misconfigured - %s", err.Error())
 	}
 
 	// cluster.Node
@@ -66,6 +77,8 @@ func NewCluster(cfg config.App, log log.Logger) (*Cluster, error) {
 	// grpc.Server
 	intApiServer := grpc.NewServer()
 	intapi.RegisterCoordinationServer(intApiServer, svcCoordination)
+	intapi.RegisterPropagationServer(intApiServer, node)
+	intapi.RegisterDelegationServer(intApiServer, node)
 
 	// fasthttp.Server
 	httpRouter := http.NewRouter(log, node, svcHash)

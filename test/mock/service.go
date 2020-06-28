@@ -78,6 +78,9 @@ func (h *ServiceHash) Hash(a, b []byte) ([]byte, uint16) {
 	sha := sha1.Sum(append(a, b...))
 	return sha[:], uint16(0)
 }
+func (h *ServiceHash) GetPartition([]byte) uint16 {
+	return uint16(0)
+}
 
 type ServiceCoordination struct{}
 

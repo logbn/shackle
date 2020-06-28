@@ -13,6 +13,7 @@ import (
 
 type Hash interface {
 	Hash([]byte, []byte) ([]byte, uint16)
+	GetPartition([]byte) uint16
 }
 
 type hash struct {
@@ -65,6 +66,12 @@ func NewHash(cfg *config.App) (r *hash, err error) {
 // Hash takes a byte array and returns a peppered hash
 func (h *hash) Hash(item, bucket []byte) (out []byte, p uint16) {
 	out = h.hashFunc(append(bucket, item...))
-	p = binary.BigEndian.Uint16(out[:2]) & h.partMask
+	p = h.GetPartition(out)
+	return
+}
+
+// GetPartition returns just the partition
+func (h *hash) GetPartition(item []byte) (p uint16) {
+	p = binary.BigEndian.Uint16(item[:2]) & h.partMask
 	return
 }

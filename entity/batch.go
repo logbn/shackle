@@ -3,6 +3,7 @@ package entity
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"sync"
@@ -17,9 +18,9 @@ const (
 	ITEM_BUSY   int8 = 3 //  Retry after timeout     - Lock not granted
 	ITEM_ERROR  int8 = 4 //  Retry after timeout     - Lock not granted
 
-	CMD_LOCK     int8 = 0
-	CMD_COMMIT   int8 = 1
-	CMD_ROLLBACK int8 = 2
+	OP_LOCK     uint32 = 0
+	OP_COMMIT   uint32 = 1
+	OP_ROLLBACK uint32 = 2
 )
 
 type hasher interface {
@@ -37,12 +38,31 @@ type BatchItem struct {
 }
 
 // Partitioned splits a batch into a map of sub-batches keyed by partition prefix
-func (b Batch) Partitioned() map[uint16]Batch {
-	batches := make(map[uint16]Batch)
+func (b Batch) Partitioned() (batches map[uint16]Batch) {
+	batches = map[uint16]Batch{}
 	for _, item := range b {
 		batches[item.Partition] = append(batches[item.Partition], item)
 	}
-	return batches
+	return
+}
+
+// PartitionIndexed splits a batch into a map of sub-batches keyed by partition index
+func (b Batch) PartitionIndexed(partitionCount int) (batches map[int]Batch) {
+	batches = map[int]Batch{}
+	var bits = int(math.Log2(float64(partitionCount)))
+	var partitionIndex int
+	for _, item := range b {
+		partitionIndex = int(item.Partition >> (32 - bits))
+		batches[partitionIndex] = append(batches[partitionIndex], item)
+	}
+	return
+}
+
+// BatchPlan is a map of batches keyed by node ID
+type BatchPlan map[string]*BatchPlanSegment
+type BatchPlanSegment struct {
+	NodeAddr string
+	Batch    Batch
 }
 
 // BatchFromRequest returns a batch given details about an http request
