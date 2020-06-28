@@ -64,4 +64,6 @@ func (s *propagation) markError(res []int8) {
 
 func (s *propagation) Start() {}
 
-func (s *propagation) Stop() {}
+func (s *propagation) Stop() {
+	s.intApiClient.Close()
+}

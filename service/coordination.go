@@ -581,6 +581,7 @@ func (s *coordination) setNodeStatus(nodeID, status string) (updated bool, err e
 
 func (s *coordination) Stop() {
 	close(s.initChan)
+	s.intApiClient.Close()
 }
 
 type fsmSnapshot []byte

@@ -64,4 +64,6 @@ func (s *delegation) markError(res []int8) {
 
 func (s *delegation) Start() {}
 
-func (s *delegation) Stop() {}
+func (s *delegation) Stop() {
+	s.intApiClient.Close()
+}
