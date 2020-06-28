@@ -30,6 +30,7 @@ type node struct {
 	svcPropagation  service.Propagation
 	svcDelegation   service.Delegation
 	initChan        chan entity.ClusterCatalog
+	active          bool
 }
 
 // NewNode returns a new node
@@ -53,6 +54,7 @@ func NewNode(
 		svcPropagation,
 		svcDelegation,
 		initChan,
+		false,
 	}, nil
 }
 
@@ -69,6 +71,10 @@ func (n *node) Rollback(batch entity.Batch) (res []int8, err error) {
 }
 
 func (n *node) handleBatch(op uint32, batch entity.Batch) (res []int8, err error) {
+	if !n.active {
+		err = fmt.Errorf("Starting up")
+		return
+	}
 	res = make([]int8, len(batch))
 	plan, err := n.svcCoordination.PlanDelegation(batch)
 	if err != nil {
@@ -135,6 +141,10 @@ func (n *node) handleBatch(op uint32, batch entity.Batch) (res []int8, err error
 
 // Receives GRPC call for delegation
 func (n *node) Delegate(ctx context.Context, req *intapi.BatchOp) (reply *intapi.BatchReply, err error) {
+	if !n.active {
+		err = fmt.Errorf("Starting up")
+		return
+	}
 	batch := make(entity.Batch, len(req.Items)/n.keylen)
 	var hash = make([]byte, n.keylen)
 	for i := 0; i < len(batch); i++ {
@@ -161,6 +171,10 @@ func (n *node) Delegate(ctx context.Context, req *intapi.BatchOp) (reply *intapi
 
 // Receives GRPC call for propagation
 func (n *node) Propagate(ctx context.Context, req *intapi.BatchOp) (reply *intapi.BatchReply, err error) {
+	if !n.active {
+		err = fmt.Errorf("Starting up")
+		return
+	}
 	batch := make(entity.Batch, len(req.Items)/n.keylen)
 	var hash = make([]byte, n.keylen)
 	for i := 0; i < len(batch); i++ {
@@ -212,6 +226,7 @@ func (n *node) Start() {
 			select {
 			case cat := <-n.initChan:
 				n.svcPersistence.Init(cat, n.id)
+				n.active = true
 			}
 		}
 	}()
