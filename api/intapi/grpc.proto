@@ -48,7 +48,10 @@ message BatchReply {
   bytes res = 2;
 }
 
-service Propagation {
-	// Propagate executes a batch operation propagated by another node
-	rpc Propagate (BatchOp) returns (BatchReply) {}
+service Replication {
+	// Replicate executes a batch operation replicated by another node
+	rpc Replicate (BatchOp) returns (BatchReply) {}
+
+	// TODO: bi-directional streaming replication
+	// rpc Stream (stream BatchOp) returns (stream BatchOp) {}
 }

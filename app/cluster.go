@@ -36,10 +36,10 @@ func NewCluster(cfg config.App, log log.Logger) (*Cluster, error) {
 	if delegationClient == nil {
 		return nil, fmt.Errorf("Delegation client finder misconfigured")
 	}
-	// intapi.PropagationClientFinder
-	propagationClient := intapi.NewPropagationClientFinder()
-	if propagationClient == nil {
-		return nil, fmt.Errorf("Propagation client finder misconfigured")
+	// intapi.ReplicationClientFinder
+	replicationClient := intapi.NewReplicationClientFinder()
+	if replicationClient == nil {
+		return nil, fmt.Errorf("Replication client finder misconfigured")
 	}
 
 	// service.Hash
@@ -62,14 +62,14 @@ func NewCluster(cfg config.App, log log.Logger) (*Cluster, error) {
 	if svcDelegation == nil || err != nil {
 		return nil, fmt.Errorf("Delegation service misconfigured - %s", err.Error())
 	}
-	// service.Propagation
-	svcPropagation, err := service.NewPropagation(&cfg, log, propagationClient)
-	if svcPropagation == nil || err != nil {
-		return nil, fmt.Errorf("Propagation service misconfigured - %s", err.Error())
+	// service.Replication
+	svcReplication, err := service.NewReplication(&cfg, log, replicationClient)
+	if svcReplication == nil || err != nil {
+		return nil, fmt.Errorf("Replication service misconfigured - %s", err.Error())
 	}
 
 	// cluster.Node
-	node, err := cluster.NewNode(cfg, log, svcHash, svcCoordination, svcPersistence, svcPropagation, svcDelegation, initChan)
+	node, err := cluster.NewNode(cfg, log, svcHash, svcCoordination, svcPersistence, svcReplication, svcDelegation, initChan)
 	if node == nil || err != nil {
 		return nil, fmt.Errorf("Node misconfigured - %s", err.Error())
 	}
@@ -77,7 +77,7 @@ func NewCluster(cfg config.App, log log.Logger) (*Cluster, error) {
 	// grpc.Server
 	intApiServer := grpc.NewServer()
 	intapi.RegisterCoordinationServer(intApiServer, svcCoordination)
-	intapi.RegisterPropagationServer(intApiServer, node)
+	intapi.RegisterReplicationServer(intApiServer, node)
 	intapi.RegisterDelegationServer(intApiServer, node)
 
 	// fasthttp.Server

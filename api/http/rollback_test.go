@@ -1,11 +1,13 @@
 package http
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/valyala/fasthttp"
 
+	"highvolume.io/shackle/entity"
 	"highvolume.io/shackle/test/mock"
 	"highvolume.io/shackle/test/mock/mockcluster"
 )
@@ -29,7 +31,8 @@ func TestRollback(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		testJson([]byte(`["a","b","c"]`))
 		assert.Equal(t, 200, ctx.Response.StatusCode(), ctx.Response.Header.String())
-		assert.Equal(t, "[0,0,0]", string(ctx.Response.Body()))
+		expected := fmt.Sprintf("[%d,%d,%d]", entity.ITEM_OPEN, entity.ITEM_OPEN, entity.ITEM_OPEN)
+		assert.Equal(t, expected, string(ctx.Response.Body()))
 	})
 
 	t.Run("Failure", func(t *testing.T) {

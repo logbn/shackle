@@ -5,7 +5,7 @@ log:
 
 api:
   http:
-    port: 8080
+    port: 8081
     keepalive: true
     keepalive_period: 60s
     max_conns_per_ip: 10000
@@ -13,31 +13,26 @@ api:
     write_timeout: 15s
     idle_timeout: 15s
   grpc:
-    port: 9090
+    port: 9091
 
 cluster:
   id: test
   keylength: 16
   partitions: 1024
   pepper: sriracha
-  replicas: 3
+  replicas: 2
   surrogates: 1
   vary:
     - zone
   node:
-    id: 1
-    raft_dir: /var/lib/shackle/raft1
-    raft_solo: true
-    addr_raft: 127.0.0.1:4709
-    addr_int_api: 127.0.0.1:4708
+    id: 2
+    raft_dir: /data/raft2
+    raft_solo: false
+    addr_raft: 127.0.0.1:4719
+    addr_int_api: 127.0.0.1:4718
     vnode_count: 8
     meta:
-      zone: a
-    join:
-      - id: 2
-        addr_raft: 127.0.0.1:4719
-      - id: 3
-        addr_raft: 127.0.0.1:4729
+      zone: b
 
 repo:
   hash:
@@ -45,13 +40,13 @@ repo:
     expiration_batch_size: 1000
     key_expiration: 730h
     lock_expiration: 10s
-    path_ix: /data/node1
-    path_ts: /data/node1
+    path_ix: /data/node2
+    path_ts: /data/node2
     sweep_interval: 1s
 
 monitor:
   prometheus:
-    port: 9100
+    port: 9101
   log:
     enabled: true
     level: info

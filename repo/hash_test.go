@@ -25,13 +25,13 @@ func TestNewHash(t *testing.T) {
 			PathIndex:      realdir,
 			PathTimeseries: fakedir,
 			CacheSize:      1000,
-		}, "vnode1", []uint16{0, 32768})
+		}, "vnode1", []uint16{0x0000, 0x8000})
 		require.True(t, os.IsNotExist(err))
 		_, err = NewHash(&config.RepoHash{
 			PathIndex:      fakedir,
 			PathTimeseries: realdir,
 			CacheSize:      1000,
-		}, "vnode1", []uint16{0, 32768})
+		}, "vnode1", []uint16{0x0000, 0x8000})
 		require.True(t, os.IsNotExist(err))
 	})
 	t.Run("Success", func(t *testing.T) {
@@ -39,7 +39,7 @@ func TestNewHash(t *testing.T) {
 			PathIndex:      realdir,
 			PathTimeseries: realdir,
 			CacheSize:      1000,
-		}, "vnode1", []uint16{0, 32768})
+		}, "vnode1", []uint16{0x0000, 0x8000})
 		require.Nil(t, err)
 	})
 }
@@ -54,7 +54,7 @@ func TestHash(t *testing.T) {
 		PathIndex:      tmpdir,
 		PathTimeseries: tmpdir,
 		CacheSize:      1000,
-	}, "vnode1", []uint16{0, 32768})
+	}, "vnode1", []uint16{0x0000, 0x8000})
 	require.Nil(t, err)
 	repo.(*hash).clock = clk
 
@@ -291,7 +291,7 @@ func TestHashSweepLocked(t *testing.T) {
 		PathIndex:      tmpdir,
 		PathTimeseries: tmpdir,
 		CacheSize:      1000,
-	}, "vnode1", []uint16{0, 32768})
+	}, "vnode1", []uint16{0, 0x8000})
 	require.Nil(t, err)
 	var clk = clock.NewMock()
 	var lockExp = 30 * time.Second
@@ -299,12 +299,12 @@ func TestHashSweepLocked(t *testing.T) {
 
 	t.Run("SweepLocked", func(t *testing.T) {
 		items := entity.Batch{
-			entity.BatchItem{0, 0, []byte("0000000000000000")},
-			entity.BatchItem{1, 0, []byte("0000000000000001")},
-			entity.BatchItem{2, 0, []byte("0000000000000002")},
-			entity.BatchItem{3, 0, []byte("0000000000000003")},
-			entity.BatchItem{4, 0, []byte("0000000000000004")},
-			entity.BatchItem{5, 0, []byte("0000000000000005")},
+			entity.BatchItem{0,  0, []byte("0000000000000000")},
+			entity.BatchItem{1,  0, []byte("0000000000000001")},
+			entity.BatchItem{2,  0, []byte("0000000000000002")},
+			entity.BatchItem{3,  0, []byte("0000000000000003")},
+			entity.BatchItem{4,  0, []byte("0000000000000004")},
+			entity.BatchItem{5,  0, []byte("0000000000000005")},
 		}
 		// Lock
 		res, err := repo.Lock(items)
@@ -450,7 +450,7 @@ func TestHashSweepExpired(t *testing.T) {
 		PathIndex:      tmpdir,
 		PathTimeseries: tmpdir,
 		CacheSize:      1000,
-	}, "vnode1", []uint16{0, 32768})
+	}, "vnode1", []uint16{0, 0x8000})
 	require.Nil(t, err)
 	var clk = clock.NewMock()
 	var keyExp = 24 * time.Hour
@@ -599,7 +599,7 @@ func TestHashClose(t *testing.T) {
 		PathIndex:      tmpdir,
 		PathTimeseries: tmpdir,
 		CacheSize:      1000,
-	}, "vnode1", []uint16{0, 32768})
+	}, "vnode1", []uint16{0, 0x8000})
 	require.Nil(t, err)
 	repo.Close()
 }

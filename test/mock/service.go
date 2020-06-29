@@ -3,29 +3,30 @@ package mock
 import (
 	"crypto/sha1"
 	"fmt"
+	"strings"
 	"sync"
 
 	"highvolume.io/shackle/entity"
 )
 
+// ServicePersistence
 type ServicePersistence struct {
-	Locks     int
-	Rollbacks int
-	Commits   int
-	Starts    int
-	Stops     int
-	mutex     sync.Mutex
+	metrics map[string]int
+	mutex   sync.Mutex
 }
 
-func (c *ServicePersistence) Init(cat entity.ClusterCatalog, nodeID string) (err error) {
+func (m *ServicePersistence) Init(cat entity.ClusterCatalog, nodeID string) (err error) {
+	m.incr("Init")
 	return
 }
 func (m *ServicePersistence) Lock(batch entity.Batch) (res []int8, err error) {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
-	m.Locks++
+	m.incr("Lock")
 	res = make([]int8, len(batch))
-	for i := range batch {
+	for i, item := range batch {
+		if strings.Contains(string(item.Hash), "ERROR") {
+			res[i] = entity.ITEM_ERROR
+			continue
+		}
 		res[i] = entity.ITEM_LOCKED
 	}
 	if len(batch) == 7 {
@@ -34,11 +35,13 @@ func (m *ServicePersistence) Lock(batch entity.Batch) (res []int8, err error) {
 	return
 }
 func (m *ServicePersistence) Rollback(batch entity.Batch) (res []int8, err error) {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
-	m.Rollbacks++
+	m.incr("Rollback")
 	res = make([]int8, len(batch))
-	for i := range batch {
+	for i, item := range batch {
+		if strings.Contains(string(item.Hash), "ERROR") {
+			res[i] = entity.ITEM_ERROR
+			continue
+		}
 		res[i] = entity.ITEM_OPEN
 	}
 	if len(batch) == 7 {
@@ -47,9 +50,7 @@ func (m *ServicePersistence) Rollback(batch entity.Batch) (res []int8, err error
 	return
 }
 func (m *ServicePersistence) Commit(batch entity.Batch) (res []int8, err error) {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
-	m.Commits++
+	m.incr("Commit")
 	res = make([]int8, len(batch))
 	for i := range batch {
 		res[i] = entity.ITEM_EXISTS
@@ -60,18 +61,32 @@ func (m *ServicePersistence) Commit(batch entity.Batch) (res []int8, err error) 
 	return
 }
 func (m *ServicePersistence) Start() {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
-	m.Starts++
+	m.incr("Start")
 	return
 }
 func (m *ServicePersistence) Stop() {
+	m.incr("Stop")
+	return
+}
+func (m *ServicePersistence) incr(metric string) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
-	m.Stops++
+	if m.metrics == nil {
+		m.metrics = map[string]int{}
+	}
+	m.metrics[metric]++
 	return
 }
 
+// Thread safe metric retrieval
+func (m *ServicePersistence) Count(metric string) (res int) {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	res, _ = m.metrics[metric]
+	return
+}
+
+// ServiceHash
 type ServiceHash struct{}
 
 func (h *ServiceHash) Hash(a, b []byte) ([]byte, uint16) {
@@ -82,8 +97,150 @@ func (h *ServiceHash) GetPartition([]byte) uint16 {
 	return uint16(0)
 }
 
-type ServiceCoordination struct{}
+// ServiceCoordination
+type ServiceCoordination struct {
+	FuncJoin            func(id, addr string) (err error)
+	FuncPlanDelegation  func(entity.Batch) (b entity.BatchPlan, err error)
+	FuncPlanReplication func(entity.Batch) (b entity.BatchPlan, err error)
+}
 
-type ServicePropagation struct{}
+func (s *ServiceCoordination) Join(id, addr string) (err error) { return }
+func (s *ServiceCoordination) PlanDelegation(batch entity.Batch) (b entity.BatchPlan, err error) {
+	if s.FuncPlanDelegation == nil {
+		return
+	}
+	return s.FuncPlanDelegation(batch)
+}
+func (s *ServiceCoordination) PlanReplication(batch entity.Batch) (b entity.BatchPlan, err error) {
+	if s.FuncPlanReplication == nil {
+		return
+	}
+	return s.FuncPlanReplication(batch)
+}
+func (s *ServiceCoordination) Start() { return }
+func (s *ServiceCoordination) Stop()  { return }
 
+func ServiceCoordinationFuncPlanDelegationBasic(batch entity.Batch) (bp entity.BatchPlan, err error) {
+	if len(batch) == 0 {
+		return
+	}
+	if strings.Contains(string(batch[0].Hash), "FATAL") {
+		err = fmt.Errorf("FATAL")
+		return
+	}
+	var b1 entity.Batch
+	var b2 entity.Batch
+	for i, item := range batch {
+		if strings.Contains(string(item.Hash), "DELEGATE") {
+			b2 = append(b2, item)
+			b2[len(b2)-1].N = i
+		} else {
+			b1 = append(b1, item)
+			b1[len(b1)-1].N = i
+		}
+	}
+	bp = entity.BatchPlan{}
+	if len(b1) > 0 {
+		bp["test"] = &entity.BatchPlanSegment{
+			NodeAddr: "127.0.0.1:4708",
+			Batch:    b1,
+		}
+	}
+	if len(b2) > 0 {
+		bp["test_2"] = &entity.BatchPlanSegment{
+			NodeAddr: "127.0.0.2:4708",
+			Batch:    b2,
+		}
+	}
+	return
+}
+func ServiceCoordinationFuncPlanCoordinationBasic(batch entity.Batch) (b entity.BatchPlan, err error) {
+	if len(batch) == 0 {
+		return
+	}
+	if strings.Contains(string(batch[0].Hash), "FATAL") {
+		err = fmt.Errorf("FATAL")
+		return
+	}
+	var b1 entity.Batch
+	for i, item := range batch {
+		b1 = append(b1, item)
+		b1[len(b1)-1].N = i
+	}
+	return entity.BatchPlan{
+		"test_2": &entity.BatchPlanSegment{
+			NodeAddr: "127.0.0.2:4708",
+			Batch:    b1,
+		},
+		"test_3": &entity.BatchPlanSegment{
+			NodeAddr: "127.0.0.3:4708",
+			Batch:    b1,
+		},
+	}, nil
+}
+
+// ServiceReplication
+type ServiceReplication struct{}
+
+func (s *ServiceReplication) Replicate(op uint32, addr string, batch entity.Batch) (res []int8, err error) {
+	res = make([]int8, len(batch))
+	for i, item := range batch {
+		if strings.Contains(string(item.Hash), "ERROR") {
+			res[i] = entity.ITEM_ERROR
+			continue
+		}
+		if strings.Contains(string(item.Hash), "PROPAGATEFAIL") {
+			for i := range res {
+				res[i] = entity.ITEM_ERROR
+			}
+			err = fmt.Errorf("PROPAGATEFAIL")
+			return
+		}
+		switch op {
+		case entity.OP_LOCK:
+			res[i] = entity.ITEM_LOCKED
+		case entity.OP_COMMIT:
+			res[i] = entity.ITEM_EXISTS
+		case entity.OP_ROLLBACK:
+			res[i] = entity.ITEM_OPEN
+		default:
+			err = fmt.Errorf("Unrecognized operation %d", op)
+		}
+	}
+	return
+}
+func (s *ServiceReplication) Start() { return }
+func (s *ServiceReplication) Stop()  { return }
+
+// ServiceDelegation
 type ServiceDelegation struct{}
+
+func (s *ServiceDelegation) Delegate(op uint32, addr string, batch entity.Batch) (res []int8, err error) {
+	res = make([]int8, len(batch))
+	for i, item := range batch {
+		if strings.Contains(string(item.Hash), "ERROR") {
+			res[i] = entity.ITEM_ERROR
+			continue
+		}
+		if strings.Contains(string(item.Hash), "DELEGATEFAIL") {
+			for i := range res {
+				res[i] = entity.ITEM_ERROR
+			}
+			err = fmt.Errorf("DELEGATEFAIL")
+			return
+		}
+		switch op {
+		case entity.OP_LOCK:
+			res[i] = entity.ITEM_LOCKED
+		case entity.OP_COMMIT:
+			res[i] = entity.ITEM_EXISTS
+		case entity.OP_ROLLBACK:
+			res[i] = entity.ITEM_OPEN
+		default:
+			err = fmt.Errorf("Unrecognized operation %d", op)
+		}
+	}
+	return
+}
+func (s *ServiceDelegation) Start() { return }
+func (s *ServiceDelegation) Stop()  { return }

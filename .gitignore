@@ -5,3 +5,4 @@ config.yml
 *.pprof
 *.out
 .terraform
+_dist

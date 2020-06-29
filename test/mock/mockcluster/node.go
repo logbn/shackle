@@ -24,3 +24,6 @@ func (n *Node) Start() {
 func (n *Node) Stop() {
 	n.SvcPersistence.Stop()
 }
+func (n *Node) Active() (c chan bool) {
+	return
+}

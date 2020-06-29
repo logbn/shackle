@@ -1,11 +1,13 @@
 package http
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/valyala/fasthttp"
 
+	"highvolume.io/shackle/entity"
 	"highvolume.io/shackle/test/mock"
 	"highvolume.io/shackle/test/mock/mockcluster"
 )
@@ -29,7 +31,8 @@ func TestLock(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		testJson([]byte(`["a","b","c"]`))
 		assert.Equal(t, 200, ctx.Response.StatusCode(), ctx.Response.Header.String())
-		assert.Equal(t, "[2,2,2]", string(ctx.Response.Body()))
+		expected := fmt.Sprintf("[%d,%d,%d]", entity.ITEM_LOCKED, entity.ITEM_LOCKED, entity.ITEM_LOCKED)
+		assert.Equal(t, expected, string(ctx.Response.Body()))
 
 		testJson([]byte(`[]`))
 		assert.Equal(t, 200, ctx.Response.StatusCode(), ctx.Response.Header.String())

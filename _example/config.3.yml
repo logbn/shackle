@@ -20,11 +20,14 @@ cluster:
   keylength: 16
   partitions: 1024
   pepper: sriracha
-  replicas: 3
+  replicas: 2
   surrogates: 1
+  vary:
+    - zone
   node:
     id: 3
-    raft_dir: /var/lib/shackle/raft3
+    raft_dir: /data/raft3
+    raft_solo: false
     addr_raft: 127.0.0.1:4729
     addr_int_api: 127.0.0.1:4728
     vnode_count: 8

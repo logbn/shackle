@@ -10,28 +10,28 @@ import (
 	"highvolume.io/shackle/log"
 )
 
-type Delegation interface {
-	Delegate(op uint32, addr string, batch entity.Batch) (res []int8, err error)
+type Replication interface {
+	Replicate(op uint32, addr string, batch entity.Batch) (res []int8, err error)
 	Start()
 	Stop()
 }
 
-type delegation struct {
+type replication struct {
 	log          log.Logger
-	intApiClient intapi.DelegationClientFinder
+	intApiClient intapi.ReplicationClientFinder
 	keylen       int
 }
 
-// NewDelegation returns a delegation service
-func NewDelegation(
+// NewReplication returns a replication service
+func NewReplication(
 	cfg *config.App,
 	log log.Logger,
-	dcf intapi.DelegationClientFinder,
-) (r *delegation, err error) {
-	return &delegation{log, dcf, cfg.Cluster.KeyLength}, nil
+	dcf intapi.ReplicationClientFinder,
+) (r *replication, err error) {
+	return &replication{log, dcf, cfg.Cluster.KeyLength}, nil
 }
 
-func (s *delegation) Delegate(op uint32, addr string, batch entity.Batch) (res []int8, err error) {
+func (s *replication) Replicate(op uint32, addr string, batch entity.Batch) (res []int8, err error) {
 	res = make([]int8, len(batch))
 	c, err := s.intApiClient.Get(addr)
 	if err != nil {
@@ -41,7 +41,7 @@ func (s *delegation) Delegate(op uint32, addr string, batch entity.Batch) (res [
 	for i, item := range batch {
 		copy(batchBytes[i*s.keylen:i*s.keylen+s.keylen], item.Hash)
 	}
-	batchResp, err := c.Delegate(context.Background(), &intapi.BatchOp{Op: op, Items: batchBytes})
+	batchResp, err := c.Replicate(context.Background(), &intapi.BatchOp{Op: op, Items: batchBytes})
 	if err != nil {
 		return
 	}
@@ -54,8 +54,8 @@ func (s *delegation) Delegate(op uint32, addr string, batch entity.Batch) (res [
 	return
 }
 
-func (s *delegation) Start() {}
+func (s *replication) Start() {}
 
-func (s *delegation) Stop() {
+func (s *replication) Stop() {
 	s.intApiClient.Close()
 }

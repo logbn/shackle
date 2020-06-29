@@ -32,6 +32,52 @@ func TestNewPersistence(t *testing.T) {
 	require.NotNil(t, svc)
 }
 
+func TestPersistenceInit(t *testing.T) {
+	logger := &mock.Logger{}
+	svc, err := NewPersistence(&config.App{
+		Cluster: &config.Cluster{
+			Partitions: 4,
+		},
+		Repo: config.Repo{
+			Hash: &config.RepoHash{},
+		},
+	}, logger, mock.RepoFactoryhash)
+	require.Nil(t, err)
+	require.NotNil(t, svc)
+	manifest := &entity.ClusterManifest{
+		ID:     "test",
+		Status: entity.CLUSTER_STATUS_INITIALIZING,
+		Catalog: entity.ClusterCatalog{
+			Replicas: 3,
+			Nodes: []entity.ClusterNode{
+				{ID: "other", VNodeCount: 4},
+				{ID: "another", VNodeCount: 4},
+				{ID: "self", VNodeCount: 4},
+			},
+		},
+	}
+	manifest.Allocate(64)
+	err = svc.Init(manifest.Catalog, "non-existent")
+	require.NotNil(t, err)
+	err = svc.Init(manifest.Catalog, "self")
+	require.Nil(t, err)
+	svc, err = NewPersistence(&config.App{
+		Cluster: &config.Cluster{
+			Partitions: 4,
+		},
+		Repo: config.Repo{
+			Hash: &config.RepoHash{
+				PathIndex: "error",
+			},
+		},
+	}, logger, mock.RepoFactoryhash)
+	require.Nil(t, err)
+	require.NotNil(t, svc)
+	err = svc.Init(manifest.Catalog, "self")
+	require.NotNil(t, err)
+
+}
+
 func TestPersistence(t *testing.T) {
 	logger := &mock.Logger{}
 	svc, err := NewPersistence(&config.App{

@@ -6,26 +6,26 @@ import (
 	"google.golang.org/grpc"
 )
 
-type PropagationClientFinder interface {
-	Get(addr string) (PropagationClient, error)
+type ReplicationClientFinder interface {
+	Get(addr string) (ReplicationClient, error)
 	Close()
 }
 
-type propagationClientFinder struct {
-	clients map[string]PropagationClient
+type replicationClientFinder struct {
+	clients map[string]ReplicationClient
 	conns   map[string]*grpc.ClientConn
 	mutex   sync.RWMutex
 }
 
-func NewPropagationClientFinder() *propagationClientFinder {
-	return &propagationClientFinder{
-		map[string]PropagationClient{},
+func NewReplicationClientFinder() *replicationClientFinder {
+	return &replicationClientFinder{
+		map[string]ReplicationClient{},
 		map[string]*grpc.ClientConn{},
 		sync.RWMutex{},
 	}
 }
 
-func (f *propagationClientFinder) Get(addr string) (c PropagationClient, err error) {
+func (f *replicationClientFinder) Get(addr string) (c ReplicationClient, err error) {
 	f.mutex.Lock()
 	defer f.mutex.Unlock()
 	if c, ok := f.clients[addr]; ok {
@@ -35,7 +35,7 @@ func (f *propagationClientFinder) Get(addr string) (c PropagationClient, err err
 	if err != nil {
 		return
 	}
-	c = NewPropagationClient(conn)
+	c = NewReplicationClient(conn)
 	if err == nil {
 		f.clients[addr] = c
 		f.conns[addr] = conn
@@ -43,12 +43,12 @@ func (f *propagationClientFinder) Get(addr string) (c PropagationClient, err err
 	return
 }
 
-func (f *propagationClientFinder) Close() {
+func (f *replicationClientFinder) Close() {
 	f.mutex.Lock()
 	defer f.mutex.Unlock()
 	for _, c := range f.conns {
 		c.Close()
 	}
-	f.clients = map[string]PropagationClient{}
+	f.clients = map[string]ReplicationClient{}
 	f.conns = map[string]*grpc.ClientConn{}
 }

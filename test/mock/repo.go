@@ -12,6 +12,10 @@ import (
 )
 
 func RepoFactoryhash(cfg *config.RepoHash, id string, partitions []uint16) (r repo.Hash, err error) {
+	if cfg.PathIndex == "error" {
+		err = fmt.Errorf("error")
+		return
+	}
 	r = &RepoHash{}
 	return
 }
@@ -54,6 +58,8 @@ func (r *RepoHash) getRes(batch entity.Batch) (res []int8, err error) {
 	for i, item := range batch {
 		if strings.Contains(string(item.Hash), "EXISTS") {
 			res[i] = entity.ITEM_EXISTS
+		} else if strings.Contains(string(item.Hash), "OPEN") {
+			res[i] = entity.ITEM_OPEN
 		} else if strings.Contains(string(item.Hash), "LOCKED") {
 			res[i] = entity.ITEM_LOCKED
 		} else if strings.Contains(string(item.Hash), "BUSY") {

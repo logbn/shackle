@@ -12,11 +12,11 @@ import (
 )
 
 const (
-	ITEM_OPEN   int8 = 0 //  Lock required           - Lock granted
-	ITEM_EXISTS int8 = 1 //  Do not proceed          - Lock not granted
+	ITEM_ERROR  int8 = 0 //  Retry after timeout     - Lock not granted
+	ITEM_OPEN   int8 = 1 //  Lock required           - Lock granted
 	ITEM_LOCKED int8 = 2 //  Proceed with processing - Lock granted
 	ITEM_BUSY   int8 = 3 //  Retry after timeout     - Lock not granted
-	ITEM_ERROR  int8 = 4 //  Retry after timeout     - Lock not granted
+	ITEM_EXISTS int8 = 4 //  Do not proceed          - Lock not granted
 
 	OP_LOCK     uint32 = 0
 	OP_COMMIT   uint32 = 1
@@ -40,8 +40,9 @@ type BatchItem struct {
 // Partitioned splits a batch into a map of sub-batches keyed by partition prefix
 func (b Batch) Partitioned() (batches map[uint16]Batch) {
 	batches = map[uint16]Batch{}
-	for _, item := range b {
+	for i, item := range b {
 		batches[item.Partition] = append(batches[item.Partition], item)
+		batches[item.Partition][len(batches[item.Partition])-1].N = i
 	}
 	return
 }
@@ -51,9 +52,10 @@ func (b Batch) PartitionIndexed(partitionCount int) (batches map[int]Batch) {
 	batches = map[int]Batch{}
 	var bits = int(math.Log2(float64(partitionCount)))
 	var partitionIndex int
-	for _, item := range b {
-		partitionIndex = int(item.Partition >> (32 - bits))
+	for i, item := range b {
+		partitionIndex = int(item.Partition >> (16 - bits))
 		batches[partitionIndex] = append(batches[partitionIndex], item)
+		batches[partitionIndex][len(batches[partitionIndex])-1].N = i
 	}
 	return
 }

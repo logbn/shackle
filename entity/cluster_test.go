@@ -44,6 +44,7 @@ func TestClusterAllocate(t *testing.T) {
 	assert.Equal(t, 8, len(manifest.Catalog.Partitions))
 	assert.Equal(t, 16, stats.masterlessVnodes)
 	assert.Equal(t, 16, stats.replicalessVnodes)
+	assert.Equal(t, 1, len(manifest.Catalog.Partitions[0].Replicas))
 
 	manifest = makeEmptyManifest(3, 8)
 	err = manifest.Allocate(4096)
@@ -76,6 +77,74 @@ func TestClusterAllocate(t *testing.T) {
 	manifest.Catalog.Partitions = []ClusterPartition{{}, {}}
 	err = manifest.Allocate(256)
 	require.NotNil(t, err)
+
+	// Cluster not initializing
+	manifest = makeEmptyManifest(3, 8)
+	manifest.Status = CLUSTER_STATUS_ALLOCATING
+	err = manifest.Allocate(256)
+	require.NotNil(t, err)
+
+	// Invalid vnode count
+	manifest = makeEmptyManifest(3, 8)
+	manifest.Catalog.Nodes[0].VNodeCount = 0
+	err = manifest.Allocate(256)
+	require.NotNil(t, err)
+
+	// Replicas greater than nodes
+	manifest = makeEmptyManifest(5, 8)
+	err = manifest.Allocate(256)
+	require.Nil(t, err)
+	assert.Equal(t, 2, len(manifest.Catalog.Partitions[0].Replicas))
+
+	// To/From Json
+	manifest = makeEmptyManifest(3, 8)
+	err = manifest.Allocate(256)
+	data := manifest.ToJson()
+	require.NotNil(t, data)
+	assert.Greater(t, len(data), 1000)
+	manifest = makeEmptyManifest(3, 8)
+	err = manifest.FromJson(data)
+	require.Nil(t, err)
+	assert.Equal(t, 256, len(manifest.Catalog.Partitions))
+}
+
+func TestClusterStatus(t *testing.T) {
+	manifest := makeEmptyManifest(2, 8)
+	assert.Equal(t, true, manifest.ClusterInitializing())
+	assert.Equal(t, false, manifest.ClusterAllocating())
+	assert.Equal(t, false, manifest.ClusterActive())
+	manifest.Status = CLUSTER_STATUS_ALLOCATING
+	assert.Equal(t, false, manifest.ClusterInitializing())
+	assert.Equal(t, true, manifest.ClusterAllocating())
+	assert.Equal(t, false, manifest.ClusterActive())
+	manifest.Status = CLUSTER_STATUS_ACTIVE
+	assert.Equal(t, false, manifest.ClusterInitializing())
+	assert.Equal(t, false, manifest.ClusterAllocating())
+	assert.Equal(t, true, manifest.ClusterActive())
+}
+
+func TestClusterNodeStatus(t *testing.T) {
+	manifest := makeEmptyManifest(2, 8)
+	node := manifest.GetNodeByAddrRaft("nonsense")
+	require.Nil(t, node)
+	node = manifest.GetNodeByAddrRaft("localhost:1001")
+	require.NotNil(t, node)
+	assert.Equal(t, true, node.Initializing())
+	node.Status = CLUSTER_NODE_STATUS_ALLOCATED
+	assert.Equal(t, true, node.Allocated())
+	node = manifest.GetNodeByID("nonsense")
+	require.Nil(t, node)
+	node = manifest.GetNodeByID("1")
+	require.NotNil(t, node)
+	assert.Equal(t, true, node.Allocated())
+	node.Status = CLUSTER_NODE_STATUS_ACTIVE
+	assert.Equal(t, true, node.Active())
+	node.Status = CLUSTER_NODE_STATUS_DOWN
+	assert.Equal(t, true, node.Down())
+	assert.Equal(t, false, node.Active())
+	node.Status = CLUSTER_NODE_STATUS_RECOVERING
+	assert.Equal(t, true, node.Recovering())
+	assert.Equal(t, false, node.Active())
 }
 
 func makeEmptyManifest(replicas, vnodeCount int) *ClusterManifest {

@@ -26,9 +26,9 @@ func TestServicePersistence(t *testing.T) {
 	svc.Start()
 	svc.Stop()
 
-	assert.Equal(t, 1, svc.Locks)
-	assert.Equal(t, 1, svc.Rollbacks)
-	assert.Equal(t, 1, svc.Commits)
-	assert.Equal(t, 1, svc.Starts)
-	assert.Equal(t, 1, svc.Stops)
+	assert.Equal(t, 1, svc.metrics["Lock"])
+	assert.Equal(t, 1, svc.metrics["Rollback"])
+	assert.Equal(t, 1, svc.metrics["Commit"])
+	assert.Equal(t, 1, svc.metrics["Start"])
+	assert.Equal(t, 1, svc.metrics["Stop"])
 }

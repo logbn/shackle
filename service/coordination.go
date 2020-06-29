@@ -31,7 +31,7 @@ const (
 type Coordination interface {
 	Join(id, addr string) error
 	PlanDelegation(entity.Batch) (entity.BatchPlan, error)
-	PlanPropagation(entity.Batch) (entity.BatchPlan, error)
+	PlanReplication(entity.Batch) (entity.BatchPlan, error)
 	Start()
 	Stop()
 }
@@ -124,7 +124,8 @@ func NewCoordination(
 	return
 }
 
-// Plan batch delegation
+// PlanDelegation returns a batch delegation plan
+// Batches are delegated to partition master nodes
 func (s *coordination) PlanDelegation(batch entity.Batch) (plan entity.BatchPlan, err error) {
 	plan = entity.BatchPlan{}
 	var nodeid string
@@ -149,8 +150,9 @@ func (s *coordination) PlanDelegation(batch entity.Batch) (plan entity.BatchPlan
 	return
 }
 
-// Plan batch propagation
-func (s *coordination) PlanPropagation(batch entity.Batch) (plan entity.BatchPlan, err error) {
+// PlanReplication returns a batch replication plan
+// Batches are delegated to partition replica nodes
+func (s *coordination) PlanReplication(batch entity.Batch) (plan entity.BatchPlan, err error) {
 	plan = entity.BatchPlan{}
 	var nodeid string
 	var node *entity.ClusterNode

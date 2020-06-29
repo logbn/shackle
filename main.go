@@ -20,7 +20,6 @@ import (
 )
 
 var config_path = flag.String("c", "config.yml", "Location of config file(s)")
-var dev = flag.Bool("dev", false, "Whether to load default set of config files")
 
 var Version string
 var Hash string
@@ -39,9 +38,6 @@ func main() {
 	rand.Seed(time.Now().UnixNano())
 
 	paths := strings.Split(*config_path, ",")
-	if *dev {
-		paths = []string{"config.1.yml", "config.2.yml", "config.3.yml"}
-	}
 
 	logger := log.NewLogrus()
 
