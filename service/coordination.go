@@ -74,7 +74,7 @@ func NewCoordination(
 	if err != nil {
 		return
 	}
-	transport, err := raft.NewTCPTransport(addrRaft, addr, 3, 10*time.Second, os.Stderr)
+	transport, err := raft.NewTCPTransport(addrRaft, addr, 3, raftTimeout, os.Stderr)
 	if err != nil {
 		return
 	}
@@ -287,7 +287,7 @@ func (s *coordination) initialize() {
 				err = fmt.Errorf("Error activating cluster: %s", err.Error())
 				return
 			}
-			s.log.Debugf("%s Cluster Activated. %s", s.nodeID, s.manifest.ToJson())
+			s.log.Debugf("Cluster Activated by node %s.", s.nodeID)
 		}
 		// Set status to active
 		if s.manifest.ClusterActive() && node.Allocated() {
@@ -447,7 +447,7 @@ func (s *coordination) initializeManifest() (err error) {
 		s.log.Errorf("Error initializing manifest: %s", err.Error())
 		return
 	}
-	s.log.Debugf("%s Manifest Initialized %s", s.nodeID, string(s.manifest.ToJson()))
+	s.log.Debugf("%s Manifest Initialized", s.nodeID)
 
 	return nil
 }
