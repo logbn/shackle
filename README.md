@@ -17,3 +17,23 @@ Shackle is a horizontally scalable distributed hash set with two phase commit bu
 - Rollback.
 - Commit.
 - Buckets.
+
+## Requirements
+
+### 1) Use a journaled filesystem
+
+Journaling is [enabled by default](https://en.wikipedia.org/wiki/Comparison_of_file_systems#Features)
+in xfs, ext3, ext4 and ntfs but it _is_ a setting that _might_ be disabled.
+
+Use of a _writeback_ filesystem (the opposite of ordered/journaled) can cause database corruption on system crash
+because writeback filesystems sometimes write pages to disk out of order while journaled filesystems do not.
+
+You can use `debugfs` to ensure that your filesystem is configured with *has_journal* enabled.
+
+```
+> debugfs -R features /dev/sda1
+
+debugfs 1.42.9 (28-Dec-2013)
+Filesystem features: has_journal ext_attr resize_inode dir_index filetype needs_recovery extent 64bit
+flex_bg sparse_super large_file huge_file uninit_bg dir_nlink extra_isize
+```
