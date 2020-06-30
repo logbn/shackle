@@ -1,8 +1,8 @@
 package entity
 
 import (
-	"fmt"
 	"crypto/sha1"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"

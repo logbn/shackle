@@ -299,12 +299,12 @@ func TestHashSweepLocked(t *testing.T) {
 
 	t.Run("SweepLocked", func(t *testing.T) {
 		items := entity.Batch{
-			entity.BatchItem{0,  0, []byte("0000000000000000")},
-			entity.BatchItem{1,  0, []byte("0000000000000001")},
-			entity.BatchItem{2,  0, []byte("0000000000000002")},
-			entity.BatchItem{3,  0, []byte("0000000000000003")},
-			entity.BatchItem{4,  0, []byte("0000000000000004")},
-			entity.BatchItem{5,  0, []byte("0000000000000005")},
+			entity.BatchItem{0, 0, []byte("0000000000000000")},
+			entity.BatchItem{1, 0, []byte("0000000000000001")},
+			entity.BatchItem{2, 0, []byte("0000000000000002")},
+			entity.BatchItem{3, 0, []byte("0000000000000003")},
+			entity.BatchItem{4, 0, []byte("0000000000000004")},
+			entity.BatchItem{5, 0, []byte("0000000000000005")},
 		}
 		// Lock
 		res, err := repo.Lock(items)
