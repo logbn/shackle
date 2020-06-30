@@ -9,6 +9,9 @@ DATA_DIR := /data
 clean:
 	@rm -rf _dist
 
+clean-data:
+	@rm -rf ${DATA_DIR}/{node,raft}*
+
 build:
 	@mkdir -p _dist
 	go build $(LDFLAGS) -o _dist/$(PROJECTNAME) main.go
