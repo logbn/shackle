@@ -255,7 +255,7 @@ func (s *coordination) initialize() {
 		}
 		// Perform allocation
 		node := s.manifest.GetNodeByID(s.nodeID)
-		if s.manifest.ClusterAllocating() && node.Initializing() {
+		if s.manifest.ClusterAllocating() && node.Initializing() && !s.allocated {
 			err := s.allocate()
 			if err != nil {
 				err = fmt.Errorf("Error allocating leader: %s", err.Error())
@@ -324,7 +324,7 @@ func (s *coordination) initialize() {
 		}
 		// Perform allocation
 		node := s.manifest.GetNodeByID(s.nodeID)
-		if s.manifest.ClusterAllocating() && node.Initializing() {
+		if s.manifest.ClusterAllocating() && node.Initializing() && !s.allocated {
 			err := s.allocate()
 			if err != nil {
 				err = fmt.Errorf("Error allocating follower: %s", err.Error())
