@@ -121,6 +121,7 @@ func (a *Cluster) Start() (err error) {
 }
 
 func (a *Cluster) Stop() {
-	a.node.Stop()
+	a.httpServer.Shutdown()
 	a.intApiServer.Stop()
+	a.node.Stop()
 }
