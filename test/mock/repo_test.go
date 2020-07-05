@@ -2,7 +2,6 @@ package mock
 
 import (
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -12,7 +11,7 @@ import (
 )
 
 func TestRepoFactoryhash(t *testing.T) {
-	repo, err := RepoFactoryhash(&config.RepoHash{}, "vnode1", []uint16{0})
+	repo, err := RepoFactoryhash(&config.RepoHash{}, 1)
 	require.Nil(t, err)
 	require.NotNil(t, repo)
 	batch1 := entity.Batch{
@@ -26,7 +25,7 @@ func TestRepoFactoryhash(t *testing.T) {
 	batch2 := append(batch1, entity.Batch{
 		entity.BatchItem{6, 0, []byte("FATAL")},
 	}...)
-	test := func(res []int8) {
+	test := func(res []uint8) {
 		assert.Equal(t, entity.ITEM_ERROR, res[0])
 		assert.Equal(t, entity.ITEM_OPEN, res[1])
 		assert.Equal(t, entity.ITEM_LOCKED, res[2])
@@ -68,28 +67,5 @@ func TestRepoFactoryhash(t *testing.T) {
 	repo.Close()
 	assert.Equal(t, repo.(*RepoHash).Closes, 2)
 
-	// Sweep
-	m, nf, d, err := repo.SweepExpired(time.Now(), 11)
-	require.Nil(t, err)
-	assert.Equal(t, 0, int(m))
-	assert.Equal(t, 0, nf)
-	assert.Equal(t, 0, d)
-	tt, d, err := repo.SweepLocked(time.Now())
-	require.Nil(t, err)
-	assert.Equal(t, 0, tt)
-	assert.Equal(t, 0, d)
-	repo.(*RepoHash).SweepExpiredFunc = func(exp time.Time, limit int) (maxAge time.Duration, notFound, deleted int, err error) {
-		return time.Duration(0), 0, limit, nil
-	}
-	repo.(*RepoHash).SweepLockedFunc = func(exp time.Time) (total int, deleted int, err error) {
-		return 0, 8, nil
-	}
-	m, nf, d, err = repo.SweepExpired(time.Now(), 11)
-	require.Nil(t, err)
-	assert.Equal(t, 0, nf)
-	assert.Equal(t, 11, d)
-	tt, d, err = repo.SweepLocked(time.Now())
-	require.Nil(t, err)
-	assert.Equal(t, 8, d)
 
 }

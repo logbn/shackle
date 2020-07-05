@@ -11,7 +11,7 @@ import (
 	"highvolume.io/shackle/repo"
 )
 
-func RepoFactoryhash(cfg *config.RepoHash, id string, partitions []uint16) (r repo.Hash, err error) {
+func RepoFactoryhash(cfg *config.RepoHash, id uint64) (r repo.Hash, err error) {
 	if cfg.PathIndex == "error" {
 		err = fmt.Errorf("error")
 		return
@@ -27,13 +27,13 @@ type RepoHash struct {
 	SweepLockedFunc  func(exp time.Time) (total int, deleted int, err error)
 }
 
-func (r *RepoHash) Lock(batch entity.Batch) (res []int8, err error) {
+func (r *RepoHash) Lock(batch entity.Batch) (res []uint8, err error) {
 	return r.getRes(batch)
 }
-func (r *RepoHash) Rollback(batch entity.Batch) (res []int8, err error) {
+func (r *RepoHash) Rollback(batch entity.Batch) (res []uint8, err error) {
 	return r.getRes(batch)
 }
-func (r *RepoHash) Commit(batch entity.Batch) (res []int8, err error) {
+func (r *RepoHash) Commit(batch entity.Batch) (res []uint8, err error) {
 	return r.getRes(batch)
 }
 func (c *RepoHash) SweepExpired(exp time.Time, limit int) (maxAge time.Duration, notFound, deleted int, err error) {
@@ -53,8 +53,8 @@ func (r *RepoHash) Close() {
 	defer r.mutex.Unlock()
 	r.Closes++
 }
-func (r *RepoHash) getRes(batch entity.Batch) (res []int8, err error) {
-	res = make([]int8, len(batch))
+func (r *RepoHash) getRes(batch entity.Batch) (res []uint8, err error) {
+	res = make([]uint8, len(batch))
 	for i, item := range batch {
 		if strings.Contains(string(item.Hash), "EXISTS") {
 			res[i] = entity.ITEM_EXISTS

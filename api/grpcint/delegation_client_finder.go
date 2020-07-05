@@ -1,4 +1,4 @@
-package intapi
+package grpcint
 
 import (
 	"sync"
@@ -6,26 +6,26 @@ import (
 	"google.golang.org/grpc"
 )
 
-type CoordinationClientFinder interface {
-	Get(addr string) (CoordinationClient, error)
+type DelegationClientFinder interface {
+	Get(addr string) (DelegationClient, error)
 	Close()
 }
 
-type coordinationClientFinder struct {
-	clients map[string]CoordinationClient
+type delegationClientFinder struct {
+	clients map[string]DelegationClient
 	conns   map[string]*grpc.ClientConn
 	mutex   sync.RWMutex
 }
 
-func NewCoordinationClientFinder() *coordinationClientFinder {
-	return &coordinationClientFinder{
-		map[string]CoordinationClient{},
+func NewDelegationClientFinder() *delegationClientFinder {
+	return &delegationClientFinder{
+		map[string]DelegationClient{},
 		map[string]*grpc.ClientConn{},
 		sync.RWMutex{},
 	}
 }
 
-func (f *coordinationClientFinder) Get(addr string) (c CoordinationClient, err error) {
+func (f *delegationClientFinder) Get(addr string) (c DelegationClient, err error) {
 	f.mutex.Lock()
 	defer f.mutex.Unlock()
 	if c, ok := f.clients[addr]; ok {
@@ -35,7 +35,7 @@ func (f *coordinationClientFinder) Get(addr string) (c CoordinationClient, err e
 	if err != nil {
 		return
 	}
-	c = NewCoordinationClient(conn)
+	c = NewDelegationClient(conn)
 	if err == nil {
 		f.clients[addr] = c
 		f.conns[addr] = conn
@@ -43,12 +43,12 @@ func (f *coordinationClientFinder) Get(addr string) (c CoordinationClient, err e
 	return
 }
 
-func (f *coordinationClientFinder) Close() {
+func (f *delegationClientFinder) Close() {
 	f.mutex.Lock()
 	defer f.mutex.Unlock()
 	for _, c := range f.conns {
 		c.Close()
 	}
-	f.clients = map[string]CoordinationClient{}
+	f.clients = map[string]DelegationClient{}
 	f.conns = map[string]*grpc.ClientConn{}
 }

@@ -3,124 +3,111 @@ package service
 import (
 	"context"
 	"fmt"
-	"io"
-	"io/ioutil"
-	"net"
-	"os"
-	"path/filepath"
-	"reflect"
-	"sync"
+	"math"
 	"time"
+	"sync"
 
 	"github.com/benbjohnson/clock"
-	"github.com/hashicorp/raft"
-	"github.com/hashicorp/raft-boltdb"
+	"github.com/lni/dragonboat/v3"
+	dbconf "github.com/lni/dragonboat/v3/config"
+	"github.com/lni/dragonboat/v3/raftio"
+	dbsm "github.com/lni/dragonboat/v3/statemachine"
+	dblog "github.com/lni/dragonboat/v3/logger"
 
-	"highvolume.io/shackle/api/intapi"
+	"highvolume.io/shackle/api/grpcint"
 	"highvolume.io/shackle/config"
 	"highvolume.io/shackle/entity"
 	"highvolume.io/shackle/log"
 )
 
 const (
-	retainSnapshotCount = 2
 	raftTimeout         = 10 * time.Second
-	waitPause           = 100 * time.Millisecond
+	metaClusterID = math.MaxUint64
 )
 
 type Coordination interface {
-	Join(id, addr string) error
+	// Join(id, addr string) error
 	PlanDelegation(entity.Batch) (entity.BatchPlan, error)
-	PlanReplication(entity.Batch) (entity.BatchPlan, error)
-	Start()
+	Start() error
 	Stop()
 }
 
 type coordination struct {
-	intapi.UnimplementedCoordinationServer
-	cfg          *config.Cluster
-	intApiClient intapi.CoordinationClientFinder
-	join         []config.NodeJoin
-	log          log.Logger
-	manifest     *entity.ClusterManifest
-	mu           sync.RWMutex
-	initmutex    sync.Mutex
-	nodeID       string
-	obsChan      chan raft.Observation
-	initChan     chan entity.ClusterCatalog
-	raft         *raft.Raft
-	active       bool
-	waiting      bool
-	allocated    bool
-	clock        clock.Clock
+	grpcint.UnimplementedCoordinationServer
+	grpcIntClient   grpcint.CoordinationClientFinder
+	join            []config.HostJoin
+	log             log.Logger
+	manifest        *entity.Manifest
+	mu              sync.RWMutex
+	initmutex       sync.Mutex
+	hostID          uint64
+	raftAddr        string
+	raftSolo        bool
+	initChan        chan entity.Catalog
+	nodeHost        *dragonboat.NodeHost
+	active          bool
+	waiting         bool
+	allocated       bool
+	clock           clock.Clock
+	metaNodeFactory func(uint64, uint64) dbsm.IStateMachine
+	cfg             *config.App
 }
 
 // NewCoordination returns a coordination service
 func NewCoordination(
 	cfg *config.App,
 	log log.Logger,
-	iac intapi.CoordinationClientFinder,
-) (s *coordination, initChan chan entity.ClusterCatalog, err error) {
+	iac grpcint.CoordinationClientFinder,
+	metaNodeFactory func(uint64, uint64) dbsm.IStateMachine,
+) (s *coordination, initChan chan entity.Catalog, err error) {
 	var (
-		nodeID   = cfg.Cluster.Node.ID
-		addrRaft = cfg.Cluster.Node.AddrRaft
-		raftDir  = cfg.Cluster.Node.RaftDir
-		raftSolo = cfg.Cluster.Node.RaftSolo
-		join     = cfg.Cluster.Node.Join
+		hostID       = cfg.Host.ID
+		deploymentID = cfg.Host.DeploymentID
+		raftAddr     = cfg.Host.RaftAddr
+		raftDir      = cfg.Host.RaftDir
+		raftSolo     = cfg.Host.RaftSolo
+		join         = cfg.Host.Join
 	)
-	config := raft.DefaultConfig()
-	config.LocalID = raft.ServerID(nodeID)
-	addr, err := net.ResolveTCPAddr("tcp", addrRaft)
-	if err != nil {
+	if len(raftAddr) < 1 {
+		err = fmt.Errorf("Node Address required")
 		return
 	}
-	transport, err := raft.NewTCPTransport(addrRaft, addr, 3, raftTimeout, os.Stderr)
-	if err != nil {
+	if hostID < 1 {
+		err = fmt.Errorf("Node Host ID required (cannot be 0)")
 		return
 	}
-	snapshots, err := raft.NewFileSnapshotStore(raftDir, retainSnapshotCount, os.Stderr)
-	if err != nil {
-		err = fmt.Errorf("file snapshot store: %s", err)
+	if deploymentID < 1 {
+		err = fmt.Errorf("Deployment ID required (cannot be 0)")
 		return
 	}
-	var logStore raft.LogStore
-	var stableStore raft.StableStore
-	if len(raftDir) == 0 {
-		logStore = raft.NewInmemStore()
-		stableStore = raft.NewInmemStore()
-	} else {
-		boltDB, err := raftboltdb.NewBoltStore(filepath.Join(raftDir, "raft.db"))
-		if err != nil {
-			return nil, nil, fmt.Errorf("new bolt store: %s", err)
-		}
-		logStore = boltDB
-		stableStore = boltDB
-	}
+	dblog.GetLogger("raft").SetLevel(dblog.INFO)
+	dblog.GetLogger("rsm").SetLevel(dblog.INFO)
+	dblog.GetLogger("transport").SetLevel(dblog.INFO)
+	dblog.GetLogger("grpc").SetLevel(dblog.INFO)
 	s = &coordination{
-		nodeID:       cfg.Cluster.Node.ID,
-		log:          log,
-		join:         join,
-		manifest:     &entity.ClusterManifest{},
-		cfg:          cfg.Cluster,
-		intApiClient: iac,
-		clock:        clock.New(),
-		initChan:     make(chan entity.ClusterCatalog),
+		hostID:          hostID,
+		log:             log,
+		join:            join,
+		manifest:        &entity.Manifest{},
+		grpcIntClient:   iac,
+		clock:           clock.New(),
+		initChan:        make(chan entity.Catalog),
+		cfg:             cfg,
+		raftAddr:        raftAddr,
+		metaNodeFactory: metaNodeFactory,
+		raftSolo:        raftSolo,
 	}
-	initChan = s.initChan
-	s.raft, err = raft.NewRaft(config, s, logStore, stableStore, snapshots, transport)
+	s.nodeHost, err = dragonboat.NewNodeHost(dbconf.NodeHostConfig{
+		DeploymentID:      deploymentID,
+		NodeHostDir:       raftDir,
+		RTTMillisecond:    200,
+		RaftAddress:       raftAddr,
+		EnableMetrics:     true,
+		RaftEventListener: s,
+	})
 	if err != nil {
-		err = fmt.Errorf("new raft: %s", err)
 		return
 	}
-	if raftSolo {
-		s.raft.BootstrapCluster(raft.Configuration{
-			Servers: []raft.Server{{
-				ID:      config.LocalID,
-				Address: transport.LocalAddr(),
-			}},
-		})
-	}
-
 	return
 }
 
@@ -128,290 +115,32 @@ func NewCoordination(
 // Batches are delegated to partition master nodes
 func (s *coordination) PlanDelegation(batch entity.Batch) (plan entity.BatchPlan, err error) {
 	plan = entity.BatchPlan{}
-	var nodeid string
-	var node *entity.ClusterNode
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	for p, b := range batch.PartitionIndexed(len(s.manifest.Catalog.Partitions)) {
-		nodeid = s.manifest.Catalog.VNodes[s.manifest.Catalog.Partitions[p].Master].Node
-		if _, ok := plan[nodeid]; !ok {
-			node = s.manifest.GetNodeByID(nodeid)
-			if node == nil {
-				err = fmt.Errorf("Unrecognized partition %04x", p)
-				return
-			}
-			plan[nodeid] = &entity.BatchPlanSegment{
-				NodeAddr: node.AddrIntApi,
+	var hostMap = s.manifest.Catalog.GetPartitionMap()
+	for clusterID, b := range batch.Partitioned() {
+		// TODO - rotate host based on retry number
+		// TODO - rotate host based on circuit breaker failure
+		var hostID = hostMap[clusterID][0]
+		if hostID != s.hostID && containsUint64(hostMap[clusterID], s.hostID) {
+			hostID = s.hostID
+		}
+		if _, ok := plan[hostID]; !ok {
+			host := s.manifest.GetHostByID(hostID)
+			plan[hostID] = &entity.BatchPlanSegment{
+				NodeAddr: host.IntApiAddr,
 				Batch:    entity.Batch{},
 			}
 		}
-		plan[nodeid].Batch = append(plan[nodeid].Batch, b...)
+		plan[hostID].Batch = append(plan[hostID].Batch, b...)
 	}
 	return
 }
 
-// PlanReplication returns a batch replication plan
-// Batches are delegated to partition replica nodes
-func (s *coordination) PlanReplication(batch entity.Batch) (plan entity.BatchPlan, err error) {
-	plan = entity.BatchPlan{}
-	var nodeid string
-	var node *entity.ClusterNode
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	for p, b := range batch.PartitionIndexed(len(s.manifest.Catalog.Partitions)) {
-		for _, vnid := range s.manifest.Catalog.Partitions[p].Replicas {
-			nodeid = s.manifest.Catalog.VNodes[vnid].Node
-			if _, ok := plan[nodeid]; !ok {
-				node = s.manifest.GetNodeByID(nodeid)
-				if node == nil {
-					err = fmt.Errorf("Unrecognized partition %04x", p)
-					return
-				}
-				plan[nodeid] = &entity.BatchPlanSegment{
-					NodeAddr: node.AddrIntApi,
-					Batch:    entity.Batch{},
-				}
-			}
-			plan[nodeid].Batch = append(plan[nodeid].Batch, b...)
-		}
-	}
-	return
-}
-
-// Join a node to the cluster.
-func (s *coordination) Join(nodeID, addr string) error {
-	configFuture := s.raft.GetConfiguration()
-	if err := configFuture.Error(); err != nil {
-		s.log.Errorf("failed to get raft configuration: %v", err)
-		return err
-	}
-	for _, srv := range configFuture.Configuration().Servers {
-		if srv.ID == raft.ServerID(nodeID) || srv.Address == raft.ServerAddress(addr) {
-			if srv.Address == raft.ServerAddress(addr) && srv.ID == raft.ServerID(nodeID) {
-				s.log.Infof("node %s at %s already member of cluster, ignoring join request", nodeID, addr)
-				return nil
-			}
-			future := s.raft.RemoveServer(srv.ID, 0, 0)
-			if err := future.Error(); err != nil {
-				return fmt.Errorf("error removing existing node %s at %s: %s", nodeID, addr, err)
-			}
-		}
-	}
-
-	f := s.raft.AddVoter(raft.ServerID(nodeID), raft.ServerAddress(addr), 0, 0)
-	if f.Error() != nil {
-		return f.Error()
-	}
-	s.log.Debugf("node %s at %s joined successfully", nodeID, addr)
-	return nil
-}
-
-// wait uses barrier to call initialize after FSM sync
-func (s *coordination) wait() {
-	s.initmutex.Lock()
-	defer s.initmutex.Unlock()
-	s.clock.Sleep(waitPause)
-	s.raft.Barrier(0).Error()
-	s.waiting = false
-	s.initialize()
-}
-
-// initialize is called by leaders and followers upon FSM synchronization.
-func (s *coordination) initialize() {
-	if s.active {
-		return
-	}
-	state := s.raft.State()
-	if state == raft.Leader {
-		// Set data address if not set
-		_, err := s.setNodeMeta(s.nodeID, s.cfg.Node.AddrIntApi, s.cfg.Node.Meta, s.cfg.Node.VNodeCount)
-		if err != nil {
-			s.log.Errorf(err.Error())
-			return
-		}
-		// Stop if any nodes have not yet reported meta
-		for _, node := range s.manifest.Catalog.Nodes {
-			if node.AddrIntApi == "" {
-				return
-			}
-		}
-		// Schedule allocation
-		if s.manifest.ClusterInitializing() {
-			err := s.manifest.Allocate(s.cfg.Partitions)
-			if err != nil {
-				s.log.Errorf(err.Error())
-				return
-			}
-			s.manifest.Status = entity.CLUSTER_STATUS_ALLOCATING
-			data := s.manifest.ToJson()
-			ftr := s.raft.Apply(data, raftTimeout)
-			err = ftr.Error()
-			if err != nil {
-				err = fmt.Errorf("Error activating cluster: %s", err.Error())
-				return
-			}
-			s.log.Debugf("%s Cluster Allocating.", s.nodeID)
-			return
-		}
-		// Perform allocation
-		node := s.manifest.GetNodeByID(s.nodeID)
-		if s.manifest.ClusterAllocating() && node.Initializing() && !s.allocated {
-			err := s.allocate()
-			if err != nil {
-				err = fmt.Errorf("Error allocating leader: %s", err.Error())
-				return
-			} else {
-				_, err = s.setNodeStatus(s.nodeID, entity.CLUSTER_NODE_STATUS_ALLOCATED)
-				if err != nil {
-					err = fmt.Errorf("Error allocating follower: %s", err.Error())
-				} else {
-					s.log.Debugf("%s Allocated", s.nodeID)
-				}
-			}
-			s.allocated = true
-			return
-		}
-		// Stop if any nodes have not yet confirmed allocation
-		for _, node := range s.manifest.Catalog.Nodes {
-			if node.Initializing() {
-				return
-			}
-		}
-		// Activate Cluster
-		if s.manifest.ClusterAllocating() {
-			s.manifest.Status = entity.CLUSTER_STATUS_ACTIVE
-			data := s.manifest.ToJson()
-			ftr := s.raft.Apply(data, raftTimeout)
-			err = ftr.Error()
-			if err != nil {
-				err = fmt.Errorf("Error activating cluster: %s", err.Error())
-				return
-			}
-			s.log.Debugf("Cluster Activated by node %s.", s.nodeID)
-		}
-		// Set status to active
-		if s.manifest.ClusterActive() && node.Allocated() {
-			_, err := s.setNodeStatus(s.nodeID, entity.CLUSTER_NODE_STATUS_ACTIVE)
-			if err != nil {
-				fmt.Errorf("Error updating node status to Active: %s", err.Error())
-			}
-			return
-		}
-		if node.Active() {
-			if !s.allocated {
-				err := s.allocate()
-				if err != nil {
-					err = fmt.Errorf("Error allocating follower: %s", err.Error())
-					return
-				}
-			}
-			s.log.Infof("Node %s Active.", s.nodeID)
-			s.active = true
-		}
-	} else if state == raft.Follower {
-		// Check manifest to see if leader's data address is represented.
-		leaderAddrIntApi := s.getAddrIntApi(string(s.raft.Leader()))
-		if len(leaderAddrIntApi) < 1 {
-			s.log.Debugf("%s Leader data address not set", s.nodeID)
-			return
-		}
-		// Check manifest to see if this node's data address is represented & correct.
-		nodeAddrIntApi := s.getAddrIntApi(s.cfg.Node.AddrRaft)
-		if nodeAddrIntApi != s.cfg.Node.AddrIntApi {
-			s.updateNodeData(leaderAddrIntApi)
-			s.log.Debugf("%s Updating data address", s.nodeID)
-			return
-		}
-		// Perform allocation
-		node := s.manifest.GetNodeByID(s.nodeID)
-		if s.manifest.ClusterAllocating() && node.Initializing() && !s.allocated {
-			err := s.allocate()
-			if err != nil {
-				err = fmt.Errorf("Error allocating follower: %s", err.Error())
-				return
-			} else {
-				err = s.updateNodeStatus(leaderAddrIntApi, entity.CLUSTER_NODE_STATUS_ALLOCATED)
-				if err != nil {
-					fmt.Errorf("Error updating node status to allocated: %s", err.Error())
-				} else {
-					s.log.Debugf("%s Allocated", s.nodeID)
-				}
-			}
-			s.allocated = true
-			return
-		}
-		// Set status to active
-		if s.manifest.ClusterActive() && node.Allocated() {
-			err := s.updateNodeStatus(leaderAddrIntApi, entity.CLUSTER_NODE_STATUS_ACTIVE)
-			if err != nil {
-				fmt.Errorf("Error updating node status to Active: %s", err.Error())
-			}
-			return
-		}
-		if node.Active() {
-			if !s.allocated {
-				err := s.allocate()
-				if err != nil {
-					err = fmt.Errorf("Error allocating follower: %s", err.Error())
-					return
-				}
-			}
-			s.log.Infof("Node %s Active.", s.nodeID)
-			s.active = true
-		}
-		if node.Down() {
-			// Begin recovery
-		}
-	}
-	return
-}
-
-// Apply applies a Raft log entry to the key-value store.
-func (s *coordination) Apply(l *raft.Log) interface{} {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if !s.active && !s.waiting {
-		s.waiting = true
-		go s.wait()
-	}
-	err := s.manifest.FromJson(l.Data)
-	if err != nil {
-		s.log.Errorf("Error parsing raft log: %s", err.Error())
-		return err
-	}
-
-	return nil
-}
-
-// Snapshot returns a snapshot of the key-value store.
-func (s *coordination) Snapshot() (raft.FSMSnapshot, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	return fsmSnapshot(s.manifest.ToJson()), nil
-}
-
-// Restore stores the key-value store to a previous state.
-func (s *coordination) Restore(rc io.ReadCloser) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if !s.active && !s.waiting {
-		s.waiting = true
-		go s.wait()
-	}
-	data, err := ioutil.ReadAll(rc)
-	if err != nil {
-		return err
-	}
-	s.manifest.FromJson(data)
-
-	return nil
-}
-
-func (s *coordination) getAddrIntApi(addrRaft string) (addrIntApi string) {
-	n := s.manifest.GetNodeByAddrRaft(addrRaft)
-	if n != nil {
-		addrIntApi = n.AddrIntApi
+func (s *coordination) getAddrIntApi(raftAddr string) (intApiAddr string) {
+	h := s.manifest.GetHostByRaftAddr(raftAddr)
+	if h != nil {
+		intApiAddr = h.IntApiAddr
 	}
 
 	return
@@ -422,32 +151,43 @@ func (s *coordination) initializeManifest() (err error) {
 	if s.manifest.Catalog.Version != "" {
 		return
 	}
-	var conf = s.raft.GetConfiguration().Configuration()
-	var nodes = make([]entity.ClusterNode, len(conf.Servers))
-	for i, srv := range conf.Servers {
-		nodes[i] = entity.ClusterNode{
-			ID:       string(srv.ID),
-			AddrRaft: string(srv.Address),
-			Status:   entity.CLUSTER_NODE_STATUS_INITIALIZING,
+	var hosts = make([]entity.Host, len(s.cfg.Host.Join) + 1)
+	hosts[0] = entity.Host{
+		ID:       s.cfg.Host.ID,
+		RaftAddr: s.cfg.Host.RaftAddr,
+		Status:   entity.HOST_STATUS_INITIALIZING,
+	}
+	for i, h := range s.cfg.Host.Join {
+		hosts[i+1] = entity.Host{
+			ID:       h.ID,
+			RaftAddr: h.RaftAddr,
+			Status:   entity.HOST_STATUS_INITIALIZING,
 		}
 	}
-	s.manifest = &entity.ClusterManifest{
-		ID:     s.cfg.ID,
-		Status: entity.CLUSTER_STATUS_INITIALIZING,
-		Catalog: entity.ClusterCatalog{
-			Version:    "1.0.0",
-			Replicas:   s.cfg.Replicas,
-			Surrogates: s.cfg.Surrogates,
-			Nodes:      nodes,
+	s.manifest = &entity.Manifest{
+		Version: 1,
+		DeploymentID: s.cfg.Host.DeploymentID,
+		Status: entity.DEPLOYMENT_STATUS_INITIALIZING,
+		Catalog: entity.Catalog{
+			Version:      "1.0.0",
+			ReplicaCount: s.cfg.Host.ReplicaCount,
+			WitnessCount: s.cfg.Host.WitnessCount,
+			Hosts:        hosts,
 		},
 	}
-	ftr := s.raft.Apply(s.manifest.ToJson(), raftTimeout)
-	err = ftr.Error()
+	ctx, _ := context.WithTimeout(context.Background(), raftTimeout)
+	metaSession, err := s.nodeHost.SyncGetSession(ctx, metaClusterID)
 	if err != nil {
-		s.log.Errorf("Error initializing manifest: %s", err.Error())
+		s.log.Errorf("Error getting meta session: %s", err.Error())
 		return
 	}
-	s.log.Debugf("%s Manifest Initialized", s.nodeID)
+	ctx, _ = context.WithTimeout(context.Background(), raftTimeout)
+	_, err = s.nodeHost.SyncPropose(ctx, metaSession, s.manifest.ToJson())
+	if err != nil {
+		s.log.Errorf("Error proposing initial manifest: %s", err.Error())
+		return
+	}
+	s.log.Debugf("%s Manifest Initialized", s.hostID)
 
 	return nil
 }
@@ -459,148 +199,47 @@ func (s *coordination) allocate() (err error) {
 }
 
 // Start starts the service
-func (s *coordination) Start() {
-	go func() {
-		for {
-			select {
-			case leader := <-s.raft.LeaderCh():
-				if leader {
-					s.log.Debugf("%s Became Leader", s.nodeID)
-					for _, j := range s.join {
-						if len(j.ID) > 0 && len(j.AddrRaft) > 0 {
-							err := s.Join(j.ID, j.AddrRaft)
-							if err != nil {
-								s.log.Errorf(err.Error())
-							}
-						}
-					}
-					// Wait for FSM log replay
-					s.raft.Barrier(0).Error()
-					s.initializeManifest()
-				} else {
-					s.log.Debugf("%s Became Follower", s.nodeID)
-				}
-			}
+func (s *coordination) Start() (err error) {
+	var initialMembers = map[uint64]string{
+		s.hostID: s.raftAddr,
+	}
+	if len(s.join) > 0 {
+		for _, host := range s.join {
+			initialMembers[host.ID] = host.RaftAddr
 		}
-	}()
-}
-
-// Makes GRPC call to leader to update node meta
-func (s *coordination) updateNodeData(leaderAddrIntApi string) (err error) {
-	c, err := s.intApiClient.Get(leaderAddrIntApi)
+	}
+	clusterConfig := dbconf.Config{
+		NodeID:             s.hostID,
+		ClusterID:          metaClusterID,
+		ElectionRTT:        10,
+		HeartbeatRTT:       1,
+		CheckQuorum:        true,
+		SnapshotEntries:    10,
+		CompactionOverhead: 5,
+	}
+	err = s.nodeHost.StartCluster(initialMembers, !s.raftSolo, s.metaNodeFactory, clusterConfig)
 	if err != nil {
 		return
 	}
-	_, err = c.NodeUpdate(context.Background(), &intapi.NodeUpdateRequest{
-		Id:         s.nodeID,
-		AddrIntApi: s.cfg.Node.AddrIntApi,
-		Meta:       s.cfg.Node.Meta,
-		VNodeCount: uint32(s.cfg.Node.VNodeCount),
-	})
 	return
 }
 
-// Receives GRPC call for node meta update
-func (s *coordination) NodeUpdate(ctx context.Context, req *intapi.NodeUpdateRequest) (*intapi.NodeUpdateReply, error) {
-	success, err := s.setNodeMeta(req.Id, req.AddrIntApi, req.Meta, int(req.VNodeCount))
-	return &intapi.NodeUpdateReply{Success: success}, err
-}
-
-// Sets node meta on leader applying manifest changes if altered
-func (s *coordination) setNodeMeta(nodeID string, addrIntApi string, meta map[string]string, vnodecount int,
-) (updated bool, err error) {
-	n := s.manifest.GetNodeByID(nodeID)
-	if n == nil {
-		err = fmt.Errorf("Node not found in setNodeMeta %s", nodeID)
-		return
+func (s *coordination) LeaderUpdated(info raftio.LeaderInfo) {
+	if s.manifest.Version == 0 && info.LeaderID == info.NodeID {
+		s.initializeManifest()
 	}
-	var dirty bool
-	if n.AddrIntApi != addrIntApi {
-		n.AddrIntApi = addrIntApi
-		dirty = true
-	}
-	if n.VNodeCount != vnodecount {
-		n.VNodeCount = vnodecount
-		dirty = true
-	}
-	if !reflect.DeepEqual(n.Meta, meta) {
-		n.Meta = meta
-		dirty = true
-	}
-	if !dirty {
-		return
-	}
-	ftr := s.raft.Apply(s.manifest.ToJson(), raftTimeout)
-	err = ftr.Error()
-	if err != nil {
-		err = fmt.Errorf("Error updating internal api address: %s", err.Error())
-		return
-	}
-	s.log.Debugf("%s Internal API address set. %s = %s", s.nodeID, nodeID, addrIntApi)
-
-	return true, nil
-}
-
-// Makes GRPC call to leader to update node meta
-func (s *coordination) updateNodeStatus(leaderAddrIntApi, status string) (err error) {
-	c, err := s.intApiClient.Get(leaderAddrIntApi)
-	if err != nil {
-		return
-	}
-	_, err = c.NodeStatusUpdate(context.Background(), &intapi.NodeStatusUpdateRequest{
-		Id:     s.nodeID,
-		Status: status,
-	})
-	return
-}
-
-// Receives GRPC call for node status update
-func (s *coordination) NodeStatusUpdate(ctx context.Context, req *intapi.NodeStatusUpdateRequest) (*intapi.NodeUpdateReply, error) {
-	success, err := s.setNodeStatus(req.Id, req.Status)
-	return &intapi.NodeUpdateReply{Success: success}, err
-}
-
-// Sets node status on leader applying manifest changes if altered
-func (s *coordination) setNodeStatus(nodeID, status string) (updated bool, err error) {
-	n := s.manifest.GetNodeByID(nodeID)
-	if n == nil {
-		err = fmt.Errorf("Node not found in setNodeStatus %s", nodeID)
-		return
-	}
-	if n.Status == status {
-		return
-	}
-	n.Status = status
-	ftr := s.raft.Apply(s.manifest.ToJson(), raftTimeout)
-	err = ftr.Error()
-	if err != nil {
-		err = fmt.Errorf("Error updating node status: %s %s %s", nodeID, status, err.Error())
-		return
-	}
-
-	return true, nil
 }
 
 func (s *coordination) Stop() {
 	close(s.initChan)
-	s.intApiClient.Close()
+	s.grpcIntClient.Close()
 }
 
-type fsmSnapshot []byte
-
-func (f fsmSnapshot) Persist(sink raft.SnapshotSink) (err error) {
-	_, err = sink.Write(f)
-	if err != nil {
-		sink.Cancel()
-		return
+func containsUint64(slice []uint64, contains uint64) bool {
+	for _, value := range slice {
+		if value == contains {
+			return true
+		}
 	}
-	err = sink.Close()
-	if err != nil {
-		sink.Cancel()
-		return
-	}
-
-	return
+	return false
 }
-
-func (f fsmSnapshot) Release() {}

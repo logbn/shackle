@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-option go_package = "highvolume.io/shackle/api/intapi";
+option go_package = "highvolume.io/shackle/api/grpcint";
 
-package intapi;
+package grpcint;
 
 service Coordination {
 	// NodeUpdate is used during cluster initialization to ensure leader has correct follower grpc address
@@ -15,7 +15,7 @@ service Coordination {
 // Node update request
 message NodeUpdateRequest {
   string id = 1;
-  string addrIntApi = 2;
+  string intApiAddr = 2;
   map<string, string> meta = 3;
   uint32 vNodeCount = 4;
 }
@@ -38,20 +38,12 @@ service Delegation {
 
 // Batch operation
 message BatchOp {
-  uint32 op = 1;
+  uint8 op = 1;
   bytes items = 2;
 }
 
-// Batch Reploy
+// Batch Reply
 message BatchReply {
   string err = 1;
   bytes res = 2;
-}
-
-service Replication {
-	// Replicate executes a batch operation replicated by another node
-	rpc Replicate (BatchOp) returns (BatchReply) {}
-
-	// TODO: bi-directional streaming replication
-	// rpc Stream (stream BatchOp) returns (stream BatchOp) {}
 }

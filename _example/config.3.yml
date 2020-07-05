@@ -15,34 +15,14 @@ api:
   grpc:
     port: 9092
 
-cluster:
-  id: test
-  keylength: 16
-  partitions: 1024
-  pepper: sriracha
-  replicas: 2
-  surrogates: 1
-  vary:
-    - zone
-  node:
-    id: 3
-    raft_dir: /data/raft3
-    raft_solo: false
-    addr_raft: 127.0.0.1:4729
-    addr_int_api: 127.0.0.1:4728
-    vnode_count: 8
-    meta:
-      zone: c
-
 repo:
   hash:
     cachesize: 100000
     expiration_batch_size: 1000
     key_expiration: 730h
     lock_expiration: 10s
-    path_ix: /data/node3
-    path_ts: /data/node3
-    sweep_interval: 1s
+    path: /data/node3
+    sweep_interval: 10s
 
 monitor:
   prometheus:
@@ -50,3 +30,20 @@ monitor:
   log:
     enabled: true
     level: info
+
+node_host:
+  id: 3
+  deployment_id: 1
+  keylength: 16
+  partitions: 64
+  pepper: sriracha
+  replica_count: 2
+  witness_count: 1
+  int_api_addr: 127.0.0.1:4728
+  raft_addr: 127.0.0.1:4729
+  raft_dir: /data/raft3
+  raft_solo: true
+  meta:
+    zone: c
+  vary:
+    - zone

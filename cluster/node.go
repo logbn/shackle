@@ -4,8 +4,11 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"io"
 
-	"highvolume.io/shackle/api/intapi"
+	dbsm "github.com/lni/dragonboat/v3/statemachine"
+
+	"highvolume.io/shackle/api/grpcint"
 	"highvolume.io/shackle/config"
 	"highvolume.io/shackle/entity"
 	"highvolume.io/shackle/log"
@@ -13,24 +16,31 @@ import (
 )
 
 type Node interface {
-	Lock(entity.Batch) ([]int8, error)
-	Commit(entity.Batch) ([]int8, error)
-	Rollback(entity.Batch) ([]int8, error)
-	Active() chan bool
+	Lock(entity.Batch) ([]uint8, error)
+	Commit(entity.Batch) ([]uint8, error)
+	Rollback(entity.Batch) ([]uint8, error)
 	Start()
 	Stop()
+
+	Open(stopc <-chan struct{}) (uint64, error)
+	Update([]dbsm.Entry) ([]dbsm.Entry, error)
+	Lookup(interface{}) (interface{}, error)
+	Sync() error
+	PrepareSnapshot() (interface{}, error)
+	SaveSnapshot(interface{}, io.Writer, <-chan struct{}) error
+	RecoverFromSnapshot(io.Reader, <-chan struct{}) error
+	Close() error
 }
 
 type node struct {
-	id              string
+	hostID          uint64
 	keylen          int
 	log             log.Logger
 	svcHash         service.Hash
 	svcCoordination service.Coordination
 	svcPersistence  service.Persistence
-	svcReplication  service.Replication
 	svcDelegation   service.Delegation
-	initChan        chan entity.ClusterCatalog
+	initChan        chan entity.Catalog
 	activeChan      chan bool
 	active          bool
 }
@@ -42,18 +52,16 @@ func NewNode(
 	svcHash service.Hash,
 	svcCoordination service.Coordination,
 	svcPersistence service.Persistence,
-	svcReplication service.Replication,
 	svcDelegation service.Delegation,
-	initChan chan entity.ClusterCatalog,
+	initChan chan entity.Catalog,
 ) (*node, error) {
 	return &node{
-		cfg.Cluster.Node.ID,
-		cfg.Cluster.KeyLength,
+		cfg.Host.ID,
+		cfg.Host.KeyLength,
 		log,
 		svcHash,
 		svcCoordination,
 		svcPersistence,
-		svcReplication,
 		svcDelegation,
 		initChan,
 		make(chan bool),
@@ -62,21 +70,21 @@ func NewNode(
 }
 
 // Lock locks a batch for processing
-func (n *node) Lock(batch entity.Batch) (res []int8, err error) {
+func (n *node) Lock(batch entity.Batch) (res []uint8, err error) {
 	return n.handleBatch(entity.OP_LOCK, batch)
 }
 
 // Commit commits a previously locked batch
-func (n *node) Commit(batch entity.Batch) (res []int8, err error) {
+func (n *node) Commit(batch entity.Batch) (res []uint8, err error) {
 	return n.handleBatch(entity.OP_COMMIT, batch)
 }
 
 // Rollback rolls back a previously locked batch
-func (n *node) Rollback(batch entity.Batch) (res []int8, err error) {
+func (n *node) Rollback(batch entity.Batch) (res []uint8, err error) {
 	return n.handleBatch(entity.OP_ROLLBACK, batch)
 }
 
-func (n *node) handleBatch(op uint32, batch entity.Batch) (res []int8, err error) {
+func (n *node) handleBatch(op uint8, batch entity.Batch) (res []uint8, err error) {
 	if !n.active {
 		err = fmt.Errorf("Starting up")
 		return
@@ -85,19 +93,18 @@ func (n *node) handleBatch(op uint32, batch entity.Batch) (res []int8, err error
 	var mutex sync.RWMutex
 	var processed int
 	var delegationPlan entity.BatchPlan
-	var replicationPlan entity.BatchPlan
 	delegationPlan, err = n.svcCoordination.PlanDelegation(batch)
 	if err != nil {
 		n.log.Errorf(err.Error())
 		return
 	}
-	res = make([]int8, len(batch))
+	res = make([]uint8, len(batch))
 	for k, v := range delegationPlan {
-		if k == n.id {
+		if k == n.hostID {
 			continue
 		}
 		wg.Add(1)
-		go func(nodeid string, addr string, batch entity.Batch) {
+		go func(nodeid uint64, addr string, batch entity.Batch) {
 			// Delegate
 			delResp, err := n.svcDelegation.Delegate(op, addr, batch)
 			if err != nil {
@@ -113,42 +120,19 @@ func (n *node) handleBatch(op uint32, batch entity.Batch) (res []int8, err error
 			wg.Done()
 		}(k, v.NodeAddr, v.Batch)
 	}
-	if _, ok := delegationPlan[n.id]; ok {
+	if _, ok := delegationPlan[n.hostID]; ok {
 		// Persist
-		persistResp, err := n.handlePersist(op, delegationPlan[n.id].Batch)
+		persistResp, err := n.handlePersist(op, delegationPlan[n.hostID].Batch)
 		if err != nil {
 			n.log.Errorf(err.Error())
 		}
 		// Mark result
 		mutex.Lock()
-		for i, item := range delegationPlan[n.id].Batch {
+		for i, item := range delegationPlan[n.hostID].Batch {
 			res[item.N] = persistResp[i]
 			processed++
 		}
 		mutex.Unlock()
-		replicationPlan, err = n.svcCoordination.PlanReplication(delegationPlan[n.id].Batch)
-		for nodeid, planSegment := range replicationPlan {
-			wg.Add(1)
-			go func(nodeid string, addr string, replicationBatch entity.Batch) {
-				// Replicate
-				replicationResp, err := n.svcReplication.Replicate(op, addr, replicationBatch)
-				if err != nil {
-					n.log.Errorf(err.Error())
-				}
-				mutex.RLock()
-				// Parity check against master result
-				var origN int
-				for i, item := range replicationBatch {
-					origN = delegationPlan[n.id].Batch[item.N].N
-					if res[origN] != replicationResp[i] {
-						n.log.Warnf("Differing response master %s=%d, replica %s=%d", n.id, res[origN],
-							nodeid, replicationResp[i])
-					}
-				}
-				mutex.RUnlock()
-				wg.Done()
-			}(nodeid, planSegment.NodeAddr, planSegment.Batch)
-		}
 	}
 	wg.Wait()
 	if processed < len(batch) {
@@ -158,7 +142,7 @@ func (n *node) handleBatch(op uint32, batch entity.Batch) (res []int8, err error
 }
 
 // Receives GRPC call for delegation
-func (n *node) Delegate(ctx context.Context, req *intapi.BatchOp) (reply *intapi.BatchReply, err error) {
+func (n *node) Delegate(ctx context.Context, req *grpcint.BatchOp) (reply *grpcint.BatchReply, err error) {
 	if !n.active {
 		err = fmt.Errorf("Starting up")
 		return
@@ -174,44 +158,9 @@ func (n *node) Delegate(ctx context.Context, req *intapi.BatchOp) (reply *intapi
 		}
 	}
 
-	res, err := n.handleBatch(req.Op, batch)
+	res, err := n.handleBatch(uint8(req.Op), batch)
 
-	reply = &intapi.BatchReply{}
-	if err != nil {
-		reply.Err = err.Error()
-	}
-	reply.Res = make([]byte, len(batch))
-	for i, b := range res {
-		reply.Res[i] = byte(b)
-	}
-	return
-}
-
-// Receives GRPC call for replication
-func (n *node) Replicate(ctx context.Context, req *intapi.BatchOp) (reply *intapi.BatchReply, err error) {
-	if !n.active {
-		err = fmt.Errorf("Starting up")
-		return
-	}
-	batch := make(entity.Batch, len(req.Items)/n.keylen)
-	var hash = make([]byte, n.keylen)
-	for i := 0; i < len(batch); i++ {
-		hash = req.Items[i*n.keylen : i*n.keylen+n.keylen]
-		batch[i] = entity.BatchItem{
-			N:         i,
-			Hash:      hash,
-			Partition: n.svcHash.GetPartition(hash),
-		}
-	}
-
-	// Persist
-	res, err := n.handlePersist(req.Op, batch)
-	if err != nil {
-		n.log.Errorf(err.Error())
-	}
-
-	// Reply
-	reply = &intapi.BatchReply{}
+	reply = &grpcint.BatchReply{}
 	if err != nil {
 		reply.Err = err.Error()
 	}
@@ -223,8 +172,8 @@ func (n *node) Replicate(ctx context.Context, req *intapi.BatchOp) (reply *intap
 }
 
 // Extracted to reduce code duplication
-func (n *node) handlePersist(op uint32, batch entity.Batch) (res []int8, err error) {
-	res = make([]int8, len(batch))
+func (n *node) handlePersist(op uint8, batch entity.Batch) (res []uint8, err error) {
+	res = make([]uint8, len(batch))
 	switch op {
 	case entity.OP_LOCK:
 		res, err = n.svcPersistence.Lock(batch)
@@ -238,6 +187,35 @@ func (n *node) handlePersist(op uint32, batch entity.Batch) (res []int8, err err
 	return
 }
 
+func (n *node) Open(stopc <-chan struct{}) (res uint64, err error) {
+	n.log.Debugf("Open")
+	return
+}
+func (n *node) Sync() (err error) {
+	n.log.Debugf("Sync")
+	return
+}
+func (n *node) PrepareSnapshot() (res interface{}, err error) {
+	n.log.Debugf("PrepareSnapshot")
+	return
+}
+func (n *node) Update([]dbsm.Entry) (res []dbsm.Entry, err error) {
+	n.log.Debugf("Update")
+	return
+}
+func (n *node) Lookup(interface{}) (res interface{}, err error) {
+	n.log.Debugf("Lookup")
+	return
+}
+func (n *node) SaveSnapshot(interface {}, io.Writer, <-chan struct {}) (err error) {
+	n.log.Debugf("SaveSnapshot")
+	return
+}
+func (n *node) RecoverFromSnapshot(io.Reader, <-chan struct{}) (err error) {
+	n.log.Debugf("RecoverFromSnapshot")
+	return
+}
+
 // Start starts services and initchan
 func (n *node) Start() {
 	go func() {
@@ -247,7 +225,7 @@ func (n *node) Start() {
 				if !ok {
 					return
 				}
-				err := n.svcPersistence.Init(cat, n.id)
+				err := n.svcPersistence.Init(cat, n.hostID)
 				if err != nil {
 					panic(err.Error())
 					return
@@ -259,19 +237,17 @@ func (n *node) Start() {
 	}()
 	n.svcDelegation.Start()
 	n.svcPersistence.Start()
-	n.svcReplication.Start()
 	n.svcCoordination.Start()
+}
+
+// Close stops node
+func (n *node) Close() (err error) {
+	return
 }
 
 // Stop stops services
 func (n *node) Stop() {
 	n.svcCoordination.Stop()
 	n.svcPersistence.Stop()
-	n.svcReplication.Stop()
 	n.svcDelegation.Stop()
-}
-
-// Active returns a channel that can be used to block the caller until the node is active
-func (n *node) Active() chan bool {
-	return n.activeChan
 }

@@ -1,4 +1,4 @@
-package intapi
+package grpcint
 
 import (
 	"sync"
@@ -6,26 +6,26 @@ import (
 	"google.golang.org/grpc"
 )
 
-type ReplicationClientFinder interface {
-	Get(addr string) (ReplicationClient, error)
+type CoordinationClientFinder interface {
+	Get(addr string) (CoordinationClient, error)
 	Close()
 }
 
-type replicationClientFinder struct {
-	clients map[string]ReplicationClient
+type coordinationClientFinder struct {
+	clients map[string]CoordinationClient
 	conns   map[string]*grpc.ClientConn
 	mutex   sync.RWMutex
 }
 
-func NewReplicationClientFinder() *replicationClientFinder {
-	return &replicationClientFinder{
-		map[string]ReplicationClient{},
+func NewCoordinationClientFinder() *coordinationClientFinder {
+	return &coordinationClientFinder{
+		map[string]CoordinationClient{},
 		map[string]*grpc.ClientConn{},
 		sync.RWMutex{},
 	}
 }
 
-func (f *replicationClientFinder) Get(addr string) (c ReplicationClient, err error) {
+func (f *coordinationClientFinder) Get(addr string) (c CoordinationClient, err error) {
 	f.mutex.Lock()
 	defer f.mutex.Unlock()
 	if c, ok := f.clients[addr]; ok {
@@ -35,7 +35,7 @@ func (f *replicationClientFinder) Get(addr string) (c ReplicationClient, err err
 	if err != nil {
 		return
 	}
-	c = NewReplicationClient(conn)
+	c = NewCoordinationClient(conn)
 	if err == nil {
 		f.clients[addr] = c
 		f.conns[addr] = conn
@@ -43,12 +43,12 @@ func (f *replicationClientFinder) Get(addr string) (c ReplicationClient, err err
 	return
 }
 
-func (f *replicationClientFinder) Close() {
+func (f *coordinationClientFinder) Close() {
 	f.mutex.Lock()
 	defer f.mutex.Unlock()
 	for _, c := range f.conns {
 		c.Close()
 	}
-	f.clients = map[string]ReplicationClient{}
+	f.clients = map[string]CoordinationClient{}
 	f.conns = map[string]*grpc.ClientConn{}
 }

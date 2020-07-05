@@ -12,19 +12,19 @@ import (
 )
 
 const (
-	ITEM_ERROR  int8 = 0 //  Retry after timeout     - Lock not granted
-	ITEM_OPEN   int8 = 1 //  Lock required           - Lock granted
-	ITEM_LOCKED int8 = 2 //  Proceed with processing - Lock granted
-	ITEM_BUSY   int8 = 3 //  Retry after timeout     - Lock not granted
-	ITEM_EXISTS int8 = 4 //  Do not proceed          - Lock not granted
+	ITEM_ERROR  uint8 = 0 //  Retry after timeout     - Lock not granted
+	ITEM_OPEN   uint8 = 1 //  Lock required           - Lock granted
+	ITEM_LOCKED uint8 = 2 //  Proceed with processing - Lock granted
+	ITEM_BUSY   uint8 = 3 //  Retry after timeout     - Lock not granted
+	ITEM_EXISTS uint8 = 4 //  Do not proceed          - Lock not granted
 
-	OP_LOCK     uint32 = 0
-	OP_COMMIT   uint32 = 1
-	OP_ROLLBACK uint32 = 2
+	OP_LOCK     uint8 = 0
+	OP_COMMIT   uint8 = 1
+	OP_ROLLBACK uint8 = 2
 )
 
 type hasher interface {
-	Hash(item, bucket []byte) (hash []byte, partition uint16)
+	Hash(item, bucket []byte) (hash []byte, partition uint64)
 }
 
 var batchParserPool = sync.Pool{New: func() interface{} { return new(fastjson.Parser) }}
@@ -33,13 +33,13 @@ var batchParserPool = sync.Pool{New: func() interface{} { return new(fastjson.Pa
 type Batch []BatchItem
 type BatchItem struct {
 	N         int
-	Partition uint16
+	Partition uint64
 	Hash      []byte
 }
 
 // Partitioned splits a batch into a map of sub-batches keyed by partition prefix
-func (b Batch) Partitioned() (batches map[uint16]Batch) {
-	batches = map[uint16]Batch{}
+func (b Batch) Partitioned() (batches map[uint64]Batch) {
+	batches = map[uint64]Batch{}
 	for i, item := range b {
 		batches[item.Partition] = append(batches[item.Partition], item)
 		batches[item.Partition][len(batches[item.Partition])-1].N = i
@@ -53,15 +53,15 @@ func (b Batch) PartitionIndexed(partitionCount int) (batches map[int]Batch) {
 	var bits = int(math.Log2(float64(partitionCount)))
 	var partitionIndex int
 	for i, item := range b {
-		partitionIndex = int(item.Partition >> (16 - bits))
+		partitionIndex = int(item.Partition >> (64 - bits))
 		batches[partitionIndex] = append(batches[partitionIndex], item)
 		batches[partitionIndex][len(batches[partitionIndex])-1].N = i
 	}
 	return
 }
 
-// BatchPlan is a map of batches keyed by node ID
-type BatchPlan map[string]*BatchPlanSegment
+// BatchPlan is a map of batches keyed by hostID
+type BatchPlan map[uint64]*BatchPlanSegment
 type BatchPlanSegment struct {
 	NodeAddr string
 	Batch    Batch
@@ -97,7 +97,7 @@ func BatchFromJson(body, bucket []byte, h hasher) (ent Batch, err error) {
 	}
 	ent = make(Batch, len(values))
 	var hash []byte
-	var partition uint16
+	var partition uint64
 	for i, sv := range values {
 		hash, partition = h.Hash(sv.GetStringBytes(), bucket)
 		ent[i] = BatchItem{i, partition, hash}
@@ -105,8 +105,8 @@ func BatchFromJson(body, bucket []byte, h hasher) (ent Batch, err error) {
 	return
 }
 
-// BatchResponseToJson converts a batch response (int8 slice) to json
-func BatchResponseToJson(res []int8) (out []byte) {
+// BatchResponseToJson converts a batch response (uint8 slice) to json
+func BatchResponseToJson(res []uint8) (out []byte) {
 	if len(res) == 0 {
 		return []byte("[]")
 	}

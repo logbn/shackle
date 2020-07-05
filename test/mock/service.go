@@ -15,13 +15,14 @@ type ServicePersistence struct {
 	mutex   sync.Mutex
 }
 
-func (m *ServicePersistence) Init(cat entity.ClusterCatalog, nodeID string) (err error) {
+
+func (m *ServicePersistence) Init(cat entity.Catalog, nodeID uint64) (err error) {
 	m.incr("Init")
 	return
 }
-func (m *ServicePersistence) Lock(batch entity.Batch) (res []int8, err error) {
+func (m *ServicePersistence) Lock(batch entity.Batch) (res []uint8, err error) {
 	m.incr("Lock")
-	res = make([]int8, len(batch))
+	res = make([]uint8, len(batch))
 	for i, item := range batch {
 		if strings.Contains(string(item.Hash), "ERROR") {
 			res[i] = entity.ITEM_ERROR
@@ -34,9 +35,9 @@ func (m *ServicePersistence) Lock(batch entity.Batch) (res []int8, err error) {
 	}
 	return
 }
-func (m *ServicePersistence) Rollback(batch entity.Batch) (res []int8, err error) {
+func (m *ServicePersistence) Rollback(batch entity.Batch) (res []uint8, err error) {
 	m.incr("Rollback")
-	res = make([]int8, len(batch))
+	res = make([]uint8, len(batch))
 	for i, item := range batch {
 		if strings.Contains(string(item.Hash), "ERROR") {
 			res[i] = entity.ITEM_ERROR
@@ -49,9 +50,9 @@ func (m *ServicePersistence) Rollback(batch entity.Batch) (res []int8, err error
 	}
 	return
 }
-func (m *ServicePersistence) Commit(batch entity.Batch) (res []int8, err error) {
+func (m *ServicePersistence) Commit(batch entity.Batch) (res []uint8, err error) {
 	m.incr("Commit")
-	res = make([]int8, len(batch))
+	res = make([]uint8, len(batch))
 	for i := range batch {
 		res[i] = entity.ITEM_EXISTS
 	}
@@ -89,19 +90,18 @@ func (m *ServicePersistence) Count(metric string) (res int) {
 // ServiceHash
 type ServiceHash struct{}
 
-func (h *ServiceHash) Hash(a, b []byte) ([]byte, uint16) {
+func (h *ServiceHash) Hash(a, b []byte) ([]byte, uint64) {
 	sha := sha1.Sum(append(a, b...))
-	return sha[:], uint16(0)
+	return sha[:], uint64(0)
 }
-func (h *ServiceHash) GetPartition([]byte) uint16 {
-	return uint16(0)
+func (h *ServiceHash) GetPartition([]byte) uint64 {
+	return uint64(0)
 }
 
 // ServiceCoordination
 type ServiceCoordination struct {
 	FuncJoin            func(id, addr string) (err error)
 	FuncPlanDelegation  func(entity.Batch) (b entity.BatchPlan, err error)
-	FuncPlanReplication func(entity.Batch) (b entity.BatchPlan, err error)
 }
 
 func (s *ServiceCoordination) Join(id, addr string) (err error) { return }
@@ -111,13 +111,7 @@ func (s *ServiceCoordination) PlanDelegation(batch entity.Batch) (b entity.Batch
 	}
 	return s.FuncPlanDelegation(batch)
 }
-func (s *ServiceCoordination) PlanReplication(batch entity.Batch) (b entity.BatchPlan, err error) {
-	if s.FuncPlanReplication == nil {
-		return
-	}
-	return s.FuncPlanReplication(batch)
-}
-func (s *ServiceCoordination) Start() { return }
+func (s *ServiceCoordination) Start() (err error) { return }
 func (s *ServiceCoordination) Stop()  { return }
 
 func ServiceCoordinationFuncPlanDelegationBasic(batch entity.Batch) (bp entity.BatchPlan, err error) {
@@ -141,82 +135,25 @@ func ServiceCoordinationFuncPlanDelegationBasic(batch entity.Batch) (bp entity.B
 	}
 	bp = entity.BatchPlan{}
 	if len(b1) > 0 {
-		bp["test"] = &entity.BatchPlanSegment{
+		bp[1] = &entity.BatchPlanSegment{
 			NodeAddr: "127.0.0.1:4708",
 			Batch:    b1,
 		}
 	}
 	if len(b2) > 0 {
-		bp["test_2"] = &entity.BatchPlanSegment{
+		bp[2] = &entity.BatchPlanSegment{
 			NodeAddr: "127.0.0.2:4708",
 			Batch:    b2,
 		}
 	}
 	return
 }
-func ServiceCoordinationFuncPlanCoordinationBasic(batch entity.Batch) (b entity.BatchPlan, err error) {
-	if len(batch) == 0 {
-		return
-	}
-	if strings.Contains(string(batch[0].Hash), "FATAL") {
-		err = fmt.Errorf("FATAL")
-		return
-	}
-	var b1 entity.Batch
-	for i, item := range batch {
-		b1 = append(b1, item)
-		b1[len(b1)-1].N = i
-	}
-	return entity.BatchPlan{
-		"test_2": &entity.BatchPlanSegment{
-			NodeAddr: "127.0.0.2:4708",
-			Batch:    b1,
-		},
-		"test_3": &entity.BatchPlanSegment{
-			NodeAddr: "127.0.0.3:4708",
-			Batch:    b1,
-		},
-	}, nil
-}
-
-// ServiceReplication
-type ServiceReplication struct{}
-
-func (s *ServiceReplication) Replicate(op uint32, addr string, batch entity.Batch) (res []int8, err error) {
-	res = make([]int8, len(batch))
-	for i, item := range batch {
-		if strings.Contains(string(item.Hash), "ERROR") {
-			res[i] = entity.ITEM_ERROR
-			continue
-		}
-		if strings.Contains(string(item.Hash), "PROPAGATEFAIL") {
-			for i := range res {
-				res[i] = entity.ITEM_ERROR
-			}
-			err = fmt.Errorf("PROPAGATEFAIL")
-			return
-		}
-		switch op {
-		case entity.OP_LOCK:
-			res[i] = entity.ITEM_LOCKED
-		case entity.OP_COMMIT:
-			res[i] = entity.ITEM_EXISTS
-		case entity.OP_ROLLBACK:
-			res[i] = entity.ITEM_OPEN
-		default:
-			err = fmt.Errorf("Unrecognized operation %d", op)
-		}
-	}
-	return
-}
-func (s *ServiceReplication) Start() { return }
-func (s *ServiceReplication) Stop()  { return }
 
 // ServiceDelegation
 type ServiceDelegation struct{}
 
-func (s *ServiceDelegation) Delegate(op uint32, addr string, batch entity.Batch) (res []int8, err error) {
-	res = make([]int8, len(batch))
+func (s *ServiceDelegation) Delegate(op uint8, addr string, batch entity.Batch) (res []uint8, err error) {
+	res = make([]uint8, len(batch))
 	for i, item := range batch {
 		if strings.Contains(string(item.Hash), "ERROR") {
 			res[i] = entity.ITEM_ERROR

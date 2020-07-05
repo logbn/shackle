@@ -6,11 +6,11 @@ import (
 )
 
 type App struct {
-	Api     *Api     `yaml:"api"`
-	Cluster *Cluster `yaml:"cluster"`
-	Log     Log      `yaml:"log"`
-	Monitor Monitor  `yaml:"monitor"`
-	Repo    Repo     `yaml:"repo"`
+	Api     *Api    `yaml:"api"`
+	Host    *Host   `yaml:"node_host"`
+	Log     Log     `yaml:"log"`
+	Monitor Monitor `yaml:"monitor"`
+	Repo    Repo    `yaml:"repo"`
 }
 
 type Api struct {
@@ -28,41 +28,36 @@ type ApiHttp struct {
 	WriteTimeout    time.Duration `yaml:"write_timeout"`
 }
 
-type Cluster struct {
-	ID         string `yaml:"id"`
-	KeyLength  int    `yaml:"keylength"`
-	Partitions int    `yaml:"partitions"`
-	Pepper     string `yaml:"pepper"`
-	Node       Node   `yaml:"node"`
-	Replicas   int    `yaml:"replicas"`
-	Surrogates int    `yaml:"surrogates"`
+type Host struct {
+	ID           uint64     `yaml:"id"`
+	DeploymentID uint64     `yaml:"deployment_id"`
+	KeyLength    int        `yaml:"keylength"`
+	Partitions   int        `yaml:"partitions"`
+	Pepper       string     `yaml:"pepper"`
+	ReplicaCount int        `yaml:"replica_count"`
+	WitnessCount int        `yaml:"witness_count"`
+	IntApiAddr   string     `yaml:"int_api_addr"`
+	RaftAddr     string     `yaml:"raft_addr"`
+	RaftDir      string     `yaml:"raft_dir"`
+	RaftSolo     bool       `yaml:"raft_solo"`
+	Meta         HostMeta   `yaml:"meta"`
+	Join         []HostJoin `yaml:"join"`
 }
 
 type Log struct {
 	Level string `yaml:"level"`
 }
 
-type Node struct {
-	ID         string     `yaml:"id"`
-	AddrIntApi string     `yaml:"addr_int_api"`
-	AddrRaft   string     `yaml:"addr_raft"`
-	Meta       NodeMeta   `yaml:"meta"`
-	RaftDir    string     `yaml:"raft_dir"`
-	RaftSolo   bool       `yaml:"raft_solo"`
-	Join       []NodeJoin `yaml:"join"`
-	VNodeCount int        `yaml:"vnode_count"`
-}
+type HostMeta map[string]string
 
-type NodeMeta map[string]string
-
-func (n NodeMeta) ToJson() (out []byte) {
+func (n *HostMeta) ToJson() (out []byte) {
 	out, _ = json.Marshal(n)
 	return
 }
 
-type NodeJoin struct {
-	ID       string `yaml:"id"`
-	AddrRaft string `yaml:"addr_raft"`
+type HostJoin struct {
+	ID       uint64 `yaml:"id"`
+	RaftAddr string `yaml:"raft_addr"`
 }
 
 type Repo struct {

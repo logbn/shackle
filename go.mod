@@ -7,10 +7,8 @@ require (
 	github.com/bmatsuo/lmdb-go v1.8.0
 	github.com/fasthttp/router v1.1.6
 	github.com/golang/protobuf v1.4.1
-	github.com/google/uuid v1.1.1
-	github.com/hashicorp/raft v1.1.2
-	github.com/hashicorp/raft-boltdb v0.0.0-20191021154308-4207f1bf0617
 	github.com/kevburnsjr/tci-lru v0.0.0-20190725165011-4be840d4dd55
+	github.com/lni/dragonboat/v3 v3.2.3-0.20200521123427-ee4eae3b8f32
 	github.com/onrik/logrus v0.5.1
 	github.com/prometheus/client_golang v1.5.1
 	github.com/prometheus/common v0.10.0

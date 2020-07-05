@@ -7,8 +7,8 @@ import (
 	"github.com/valyala/fasthttp"
 	"google.golang.org/grpc"
 
+	"highvolume.io/shackle/api/grpcint"
 	"highvolume.io/shackle/api/http"
-	"highvolume.io/shackle/api/intapi"
 	"highvolume.io/shackle/cluster"
 	"highvolume.io/shackle/config"
 	"highvolume.io/shackle/log"
@@ -17,40 +17,30 @@ import (
 )
 
 type Cluster struct {
-	log          log.Logger
-	intApiServer *grpc.Server
-	httpServer   *fasthttp.Server
-	node         cluster.Node
-	apiPortHttp  int
-	addrIntApi   string
+	log           log.Logger
+	grpcIntServer *grpc.Server
+	httpServer    *fasthttp.Server
+	node          cluster.Node
+	apiPortHttp   int
+	addrIntApi    string
 }
 
 func NewCluster(cfg config.App, log log.Logger) (*Cluster, error) {
-	// intapi.CoordinationClientFinder
-	coordinationClient := intapi.NewCoordinationClientFinder()
+	// grpcint.CoordinationClientFinder
+	coordinationClient := grpcint.NewCoordinationClientFinder()
 	if coordinationClient == nil {
 		return nil, fmt.Errorf("Coordination client finder misconfigured")
 	}
-	// intapi.DelegationClientFinder
-	delegationClient := intapi.NewDelegationClientFinder()
+	// grpcint.DelegationClientFinder
+	delegationClient := grpcint.NewDelegationClientFinder()
 	if delegationClient == nil {
 		return nil, fmt.Errorf("Delegation client finder misconfigured")
-	}
-	// intapi.ReplicationClientFinder
-	replicationClient := intapi.NewReplicationClientFinder()
-	if replicationClient == nil {
-		return nil, fmt.Errorf("Replication client finder misconfigured")
 	}
 
 	// service.Hash
 	svcHash, err := service.NewHash(&cfg)
 	if svcHash == nil || err != nil {
 		return nil, fmt.Errorf("Hash service misconfigured - %s", err.Error())
-	}
-	// service.Coordination
-	svcCoordination, initChan, err := service.NewCoordination(&cfg, log, coordinationClient)
-	if svcCoordination == nil || err != nil {
-		return nil, fmt.Errorf("Coordination service misconfigured - %s", err.Error())
 	}
 	// service.Persistence
 	svcPersistence, err := service.NewPersistence(&cfg, log, repo.NewHash)
@@ -62,23 +52,25 @@ func NewCluster(cfg config.App, log log.Logger) (*Cluster, error) {
 	if svcDelegation == nil || err != nil {
 		return nil, fmt.Errorf("Delegation service misconfigured - %s", err.Error())
 	}
-	// service.Replication
-	svcReplication, err := service.NewReplication(&cfg, log, replicationClient)
-	if svcReplication == nil || err != nil {
-		return nil, fmt.Errorf("Replication service misconfigured - %s", err.Error())
+	// cluster.MetaNodeFactory
+	metaNodeFactory := cluster.NewMetaNodeFactory(cfg, log, svcHash, svcPersistence, svcDelegation)
+
+	// service.Coordination
+	svcCoordination, initChan, err := service.NewCoordination(&cfg, log, coordinationClient, metaNodeFactory)
+	if svcCoordination == nil || err != nil {
+		return nil, fmt.Errorf("Coordination service misconfigured - %s", err.Error())
 	}
 
 	// cluster.Node
-	node, err := cluster.NewNode(cfg, log, svcHash, svcCoordination, svcPersistence, svcReplication, svcDelegation, initChan)
+	node, err := cluster.NewNode(cfg, log, svcHash, svcCoordination, svcPersistence, svcDelegation, initChan)
 	if node == nil || err != nil {
 		return nil, fmt.Errorf("Node misconfigured - %s", err.Error())
 	}
 
 	// grpc.Server
-	intApiServer := grpc.NewServer()
-	intapi.RegisterCoordinationServer(intApiServer, svcCoordination)
-	intapi.RegisterReplicationServer(intApiServer, node)
-	intapi.RegisterDelegationServer(intApiServer, node)
+	grpcIntServer := grpc.NewServer()
+	grpcint.RegisterCoordinationServer(grpcIntServer, svcCoordination)
+	grpcint.RegisterDelegationServer(grpcIntServer, node)
 
 	// fasthttp.Server
 	httpRouter := http.NewRouter(log, node, svcHash)
@@ -95,7 +87,7 @@ func NewCluster(cfg config.App, log log.Logger) (*Cluster, error) {
 	}
 
 	// Create GRPC Server
-	return &Cluster{log, intApiServer, httpServer, node, cfg.Api.Http.Port, cfg.Cluster.Node.AddrIntApi}, nil
+	return &Cluster{log, grpcIntServer, httpServer, node, cfg.Api.Http.Port, cfg.Host.IntApiAddr}, nil
 }
 
 func (a *Cluster) Start() (err error) {
@@ -112,7 +104,7 @@ func (a *Cluster) Start() (err error) {
 		return
 	}
 	go func() {
-		err = a.intApiServer.Serve(lis)
+		err = a.grpcIntServer.Serve(lis)
 		if err != nil {
 			a.log.Errorf(err.Error())
 		}
@@ -122,6 +114,6 @@ func (a *Cluster) Start() (err error) {
 
 func (a *Cluster) Stop() {
 	a.httpServer.Shutdown()
-	a.intApiServer.Stop()
+	a.grpcIntServer.Stop()
 	a.node.Stop()
 }

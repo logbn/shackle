@@ -20,15 +20,14 @@ func TestNode(t *testing.T) {
 		svcHash         = &mock.ServiceHash{}
 		svcCoordination = &mock.ServiceCoordination{}
 		svcPersistence  = &mock.ServicePersistence{}
-		svcReplication  = &mock.ServiceReplication{}
 		svcDelegation   = &mock.ServiceDelegation{}
 	)
-	initChan := make(chan entity.ClusterCatalog)
+	initChan := make(chan entity.Catalog)
 	t.Run("New", func(t *testing.T) {
 		node, err = NewNode(
 			config.App{
-				Cluster: &config.Cluster{
-					Node:      config.Node{ID: "test"},
+				Host: &config.Host{
+					ID: 1,
 					KeyLength: 16,
 				},
 			},
@@ -36,7 +35,6 @@ func TestNode(t *testing.T) {
 			svcHash,
 			svcCoordination,
 			svcPersistence,
-			svcReplication,
 			svcDelegation,
 			initChan,
 		)
@@ -55,9 +53,7 @@ func TestNode(t *testing.T) {
 		require.NotNil(t, err)
 		require.Equal(t, 0, len(res))
 		assert.Equal(t, "Starting up", err.Error())
-		initChan <- entity.ClusterCatalog{}
-		<-node.Active()
-		assert.Equal(t, true, node.active)
+		initChan <- entity.Catalog{}
 		assert.Equal(t, 1, svcPersistence.Count("Init"))
 	})
 	t.Run("Lock", func(t *testing.T) {
@@ -70,7 +66,6 @@ func TestNode(t *testing.T) {
 		assert.Equal(t, entity.ITEM_ERROR, res[0])
 		assert.Equal(t, entity.ITEM_ERROR, res[1])
 		svcCoordination.FuncPlanDelegation = mock.ServiceCoordinationFuncPlanDelegationBasic
-		svcCoordination.FuncPlanReplication = mock.ServiceCoordinationFuncPlanCoordinationBasic
 		res, err = node.Lock(entity.Batch{
 			{0, 0, []byte("TEST000000000002")},
 			{1, 0, []byte("TEST000000000003")},
@@ -118,21 +113,6 @@ func TestNode(t *testing.T) {
 		require.Nil(t, err)
 		require.Equal(t, 2, len(res))
 		assert.Equal(t, entity.ITEM_ERROR, res[0])
-		assert.Equal(t, entity.ITEM_LOCKED, res[1])
-	})
-	// Replication failure results in successful response
-	// This will likely remain true, but other actions are required
-	// Node should report availability disruption windows to leader
-	// Node should queue availability disruption window reports if cluster has no leader
-	// Replication service should implement a circuit breaker to eliminate replication attempts for downed peers
-	t.Run("Failed Replication", func(t *testing.T) {
-		res, err := node.Lock(entity.Batch{
-			{0, 0, []byte("PROPAGATEFAIL040")},
-			{1, 0, []byte("TEST000000000041")},
-		})
-		require.Nil(t, err)
-		require.Equal(t, 2, len(res))
-		assert.Equal(t, entity.ITEM_LOCKED, res[0])
 		assert.Equal(t, entity.ITEM_LOCKED, res[1])
 	})
 	t.Run("Stop", func(t *testing.T) {
