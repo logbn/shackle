@@ -2,7 +2,7 @@ VERSION := $(shell git describe --tags --always)
 HASH := $(shell git rev-parse --short HEAD)
 PROJECTNAME := shackle
 
-BUILD_TAGS := -tags='dragonboat_pebble_test'
+BUILD_TAGS := -tags=''
 
 LDFLAGS := -ldflags "-X 'main.Version=$(VERSION)' -X 'main.Hash=$(HASH)'" $(BUILD_TAGS)
 
@@ -32,6 +32,7 @@ coverage:
 
 gen:
 	protoc api/grpcint/grpc.proto --go_out=plugins=grpc:. --go_opt=paths=source_relative
+	protoc entity/event/event.proto --go_out=plugins=grpc:. --go_opt=paths=source_relative
 
 dev:
 	@mkdir -p $(DATA_DIR)/node{1,2,3}

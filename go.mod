@@ -8,7 +8,7 @@ require (
 	github.com/fasthttp/router v1.1.6
 	github.com/golang/protobuf v1.4.1
 	github.com/kevburnsjr/tci-lru v0.0.0-20190725165011-4be840d4dd55
-	github.com/lni/dragonboat/v3 v3.2.3-0.20200521123427-ee4eae3b8f32
+	github.com/lni/dragonboat/v3 v3.1.1-0.20200703035341-ab2240ccadf9
 	github.com/onrik/logrus v0.5.1
 	github.com/prometheus/client_golang v1.5.1
 	github.com/prometheus/common v0.10.0

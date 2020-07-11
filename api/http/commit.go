@@ -12,7 +12,7 @@ import (
 
 // Commit accepts rollback requests via api
 type Commit struct {
-	node    cluster.Node
+	host    cluster.Host
 	svcHash service.Hash
 }
 
@@ -21,7 +21,7 @@ func (c *Commit) ServeFastHTTP(ctx *fasthttp.RequestCtx) {
 	if err != nil {
 		return
 	}
-	res, err := c.node.Commit(batch)
+	res, err := c.host.Commit(batch)
 	if err != nil {
 		ctx.Response.SetStatusCode(500)
 		fmt.Fprintf(ctx, entity.ErrorToJson(err))

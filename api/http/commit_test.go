@@ -15,7 +15,7 @@ import (
 func TestCommit(t *testing.T) {
 	var ctx fasthttp.RequestCtx
 	svc := mock.ServicePersistence{}
-	h := Commit{&mockcluster.Node{&svc}, &mock.ServiceHash{}}
+	h := Commit{&mockcluster.Host{SvcPersistence: &svc}, &mock.ServiceHash{}}
 
 	testJson := func(b []byte, withHdrApp, withHdrID, withHdrType bool) {
 		ctx.Request.Reset()

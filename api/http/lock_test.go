@@ -15,7 +15,7 @@ import (
 func TestLock(t *testing.T) {
 	var ctx fasthttp.RequestCtx
 	svc := mock.ServicePersistence{}
-	h := Lock{&mockcluster.Node{&svc}, &mock.ServiceHash{}}
+	h := Lock{&mockcluster.Host{SvcPersistence: &svc}, &mock.ServiceHash{}}
 
 	testJson := func(b []byte) {
 		ctx.Request.Reset()

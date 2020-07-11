@@ -15,6 +15,10 @@ type ServicePersistence struct {
 	mutex   sync.Mutex
 }
 
+// GetDatabases returns a list of database names
+func (c *ServicePersistence) GetDatabases() []string {
+	return []string{}
+}
 
 func (m *ServicePersistence) Init(cat entity.Catalog, nodeID uint64) (err error) {
 	m.incr("Init")
@@ -100,8 +104,8 @@ func (h *ServiceHash) GetPartition([]byte) uint64 {
 
 // ServiceCoordination
 type ServiceCoordination struct {
-	FuncJoin            func(id, addr string) (err error)
-	FuncPlanDelegation  func(entity.Batch) (b entity.BatchPlan, err error)
+	FuncJoin           func(id, addr string) (err error)
+	FuncPlanDelegation func(entity.Batch) (b entity.BatchPlan, err error)
 }
 
 func (s *ServiceCoordination) Join(id, addr string) (err error) { return }
@@ -112,7 +116,7 @@ func (s *ServiceCoordination) PlanDelegation(batch entity.Batch) (b entity.Batch
 	return s.FuncPlanDelegation(batch)
 }
 func (s *ServiceCoordination) Start() (err error) { return }
-func (s *ServiceCoordination) Stop()  { return }
+func (s *ServiceCoordination) Stop()              { return }
 
 func ServiceCoordinationFuncPlanDelegationBasic(batch entity.Batch) (bp entity.BatchPlan, err error) {
 	if len(batch) == 0 {

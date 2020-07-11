@@ -12,7 +12,7 @@ import (
 
 // Rollback accepts rollback requests via api
 type Rollback struct {
-	node    cluster.Node
+	host    cluster.Host
 	svcHash service.Hash
 }
 
@@ -22,7 +22,7 @@ func (c *Rollback) ServeFastHTTP(ctx *fasthttp.RequestCtx) {
 	if err != nil {
 		return
 	}
-	res, err := c.node.Rollback(batch)
+	res, err := c.host.Rollback(batch)
 	if err != nil {
 		ctx.Response.SetStatusCode(500)
 		fmt.Fprintf(ctx, entity.ErrorToJson(err))

@@ -45,16 +45,16 @@ func TestPersistenceInit(t *testing.T) {
 	require.Nil(t, err)
 	require.NotNil(t, svc)
 	manifest := &entity.Manifest{
-		DeploymentID:     1,
-		Status: entity.DEPLOYMENT_STATUS_INITIALIZING,
+		DeploymentID: 1,
+		Status:       entity.DEPLOYMENT_STATUS_INITIALIZING,
 		Catalog: entity.Catalog{
-			Partitions: 8,
+			Partitions:   8,
 			ReplicaCount: 2,
 			WitnessCount: 1,
 			Hosts: []entity.Host{
-				{ID: 1, RaftAddr:"127.0.0.1:1001", Status: entity.HOST_STATUS_INITIALIZING},
-				{ID: 2, RaftAddr:"127.0.0.2:1002", Status: entity.HOST_STATUS_INITIALIZING},
-				{ID: 3, RaftAddr:"127.0.0.3:1003", Status: entity.HOST_STATUS_INITIALIZING},
+				{ID: 1, RaftAddr: "127.0.0.1:1001", Status: entity.HOST_STATUS_INITIALIZING},
+				{ID: 2, RaftAddr: "127.0.0.2:1002", Status: entity.HOST_STATUS_INITIALIZING},
+				{ID: 3, RaftAddr: "127.0.0.3:1003", Status: entity.HOST_STATUS_INITIALIZING},
 			},
 		},
 	}
@@ -93,15 +93,15 @@ func TestPersistence(t *testing.T) {
 	require.Nil(t, err)
 	require.NotNil(t, svc)
 	manifest := &entity.Manifest{
-		DeploymentID:     1,
-		Status: entity.DEPLOYMENT_STATUS_INITIALIZING,
+		DeploymentID: 1,
+		Status:       entity.DEPLOYMENT_STATUS_INITIALIZING,
 		Catalog: entity.Catalog{
-			Partitions: 4,
+			Partitions:   4,
 			ReplicaCount: 3,
 			Hosts: []entity.Host{
-				{ID: 1, RaftAddr:"127.0.0.1:1001", Status: entity.HOST_STATUS_INITIALIZING},
-				{ID: 2, RaftAddr:"127.0.0.2:1002", Status: entity.HOST_STATUS_INITIALIZING},
-				{ID: 3, RaftAddr:"127.0.0.3:1003", Status: entity.HOST_STATUS_INITIALIZING},
+				{ID: 1, RaftAddr: "127.0.0.1:1001", Status: entity.HOST_STATUS_INITIALIZING},
+				{ID: 2, RaftAddr: "127.0.0.2:1002", Status: entity.HOST_STATUS_INITIALIZING},
+				{ID: 3, RaftAddr: "127.0.0.3:1003", Status: entity.HOST_STATUS_INITIALIZING},
 			},
 		},
 	}
@@ -265,15 +265,15 @@ func TestPersistenceSweep(t *testing.T) {
 	require.Nil(t, err)
 	require.NotNil(t, svc)
 	manifest := &entity.Manifest{
-		DeploymentID:     1,
-		Status: entity.DEPLOYMENT_STATUS_INITIALIZING,
+		DeploymentID: 1,
+		Status:       entity.DEPLOYMENT_STATUS_INITIALIZING,
 		Catalog: entity.Catalog{
-			Partitions: 4,
+			Partitions:   4,
 			ReplicaCount: 3,
 			Hosts: []entity.Host{
-				{ID: 1, RaftAddr:"127.0.0.1:1001", Status: entity.HOST_STATUS_INITIALIZING},
-				{ID: 2, RaftAddr:"127.0.0.2:1002", Status: entity.HOST_STATUS_INITIALIZING},
-				{ID: 3, RaftAddr:"127.0.0.3:1003", Status: entity.HOST_STATUS_INITIALIZING},
+				{ID: 1, RaftAddr: "127.0.0.1:1001", Status: entity.HOST_STATUS_INITIALIZING},
+				{ID: 2, RaftAddr: "127.0.0.2:1002", Status: entity.HOST_STATUS_INITIALIZING},
+				{ID: 3, RaftAddr: "127.0.0.3:1003", Status: entity.HOST_STATUS_INITIALIZING},
 			},
 		},
 	}

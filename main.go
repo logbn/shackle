@@ -52,21 +52,24 @@ func main() {
 			if err != nil {
 				logger.Fatalf(err.Error())
 			}
+
+			if cfg.Host == nil {
+				logger.Fatalf("Host misconfigured")
+			}
+
 			// App Startup
 			var (
 				cluster *app.Cluster
 			)
 
-			if cfg.Host != nil {
-				cluster, err = app.NewCluster(cfg, logger)
-				if err != nil {
-					logger.Fatalf("Error Starting Cluster Node %d - %s", i, err.Error())
-				}
-				logger.Infof("Starting Cluster Node %d", i)
-				err = cluster.Start()
-				if err != nil {
-					logger.Fatalf("Error Starting Cluster Node %d - %s", i, err.Error())
-				}
+			cluster, err = app.NewCluster(cfg, logger)
+			if err != nil {
+				logger.Fatalf("Error Starting Cluster Node %d - %s", i+1, err.Error())
+			}
+			logger.Infof("Starting Cluster Node %d", i)
+			err = cluster.Start()
+			if err != nil {
+				logger.Fatalf("Error Starting Cluster Node %d - %s", i+1, err.Error())
 			}
 
 			started <- true

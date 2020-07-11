@@ -21,7 +21,9 @@ repo:
     expiration_batch_size: 1000
     key_expiration: 730h
     lock_expiration: 10s
-    path: /data/node1
+    disks:
+      - path: /data/node1
+        capacity: 8
     sweep_interval: 10s
 
 monitor:
@@ -31,7 +33,7 @@ monitor:
     enabled: true
     level: info
 
-node_host:
+host:
   id: 1
   deployment_id: 1
   keylength: 16
@@ -42,11 +44,14 @@ node_host:
   int_api_addr: 127.0.0.1:4708
   raft_addr: 127.0.0.1:4709
   raft_dir: /data/raft1
+  raft_solo: true
   meta:
     zone: a
   vary:
     - zone
   join:
+    - id: 1
+      raft_addr: 127.0.0.1:4709
     - id: 2
       raft_addr: 127.0.0.1:4719
     - id: 3

@@ -15,7 +15,7 @@ import (
 func TestRollback(t *testing.T) {
 	var ctx fasthttp.RequestCtx
 	svc := mock.ServicePersistence{}
-	h := Rollback{&mockcluster.Node{&svc}, &mock.ServiceHash{}}
+	h := Rollback{&mockcluster.Host{SvcPersistence: &svc}, &mock.ServiceHash{}}
 
 	testJson := func(b []byte) {
 		ctx.Request.Reset()

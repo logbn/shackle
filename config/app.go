@@ -7,7 +7,7 @@ import (
 
 type App struct {
 	Api     *Api    `yaml:"api"`
-	Host    *Host   `yaml:"node_host"`
+	Host    *Host   `yaml:"host"`
 	Log     Log     `yaml:"log"`
 	Monitor Monitor `yaml:"monitor"`
 	Repo    Repo    `yaml:"repo"`

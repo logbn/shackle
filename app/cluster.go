@@ -14,28 +14,27 @@ import (
 	"highvolume.io/shackle/log"
 	"highvolume.io/shackle/repo"
 	"highvolume.io/shackle/service"
+	"highvolume.io/shackle/entity"
 )
 
 type Cluster struct {
 	log           log.Logger
 	grpcIntServer *grpc.Server
 	httpServer    *fasthttp.Server
-	node          cluster.Node
+	host          cluster.Host
 	apiPortHttp   int
 	addrIntApi    string
 }
 
 func NewCluster(cfg config.App, log log.Logger) (*Cluster, error) {
-	// grpcint.CoordinationClientFinder
-	coordinationClient := grpcint.NewCoordinationClientFinder()
-	if coordinationClient == nil {
-		return nil, fmt.Errorf("Coordination client finder misconfigured")
-	}
 	// grpcint.DelegationClientFinder
 	delegationClient := grpcint.NewDelegationClientFinder()
 	if delegationClient == nil {
 		return nil, fmt.Errorf("Delegation client finder misconfigured")
 	}
+
+	// Initialization channel
+	initChan := make(chan entity.Catalog)
 
 	// service.Hash
 	svcHash, err := service.NewHash(&cfg)
@@ -52,28 +51,19 @@ func NewCluster(cfg config.App, log log.Logger) (*Cluster, error) {
 	if svcDelegation == nil || err != nil {
 		return nil, fmt.Errorf("Delegation service misconfigured - %s", err.Error())
 	}
-	// cluster.MetaNodeFactory
-	metaNodeFactory := cluster.NewMetaNodeFactory(cfg, log, svcHash, svcPersistence, svcDelegation)
 
-	// service.Coordination
-	svcCoordination, initChan, err := service.NewCoordination(&cfg, log, coordinationClient, metaNodeFactory)
-	if svcCoordination == nil || err != nil {
-		return nil, fmt.Errorf("Coordination service misconfigured - %s", err.Error())
-	}
-
-	// cluster.Node
-	node, err := cluster.NewNode(cfg, log, svcHash, svcCoordination, svcPersistence, svcDelegation, initChan)
-	if node == nil || err != nil {
-		return nil, fmt.Errorf("Node misconfigured - %s", err.Error())
+	// cluster.Host
+	host, err := cluster.NewHost(*cfg.Host, log, svcHash, svcPersistence, svcDelegation, initChan)
+	if host == nil || err != nil {
+		return nil, fmt.Errorf("Host misconfigured - %s", err.Error())
 	}
 
 	// grpc.Server
 	grpcIntServer := grpc.NewServer()
-	grpcint.RegisterCoordinationServer(grpcIntServer, svcCoordination)
-	grpcint.RegisterDelegationServer(grpcIntServer, node)
+	grpcint.RegisterDelegationServer(grpcIntServer, host)
 
 	// fasthttp.Server
-	httpRouter := http.NewRouter(log, node, svcHash)
+	httpRouter := http.NewRouter(log, host, svcHash)
 	httpServer := &fasthttp.Server{
 		Logger:                log,
 		Handler:               httpRouter.Handler,
@@ -87,11 +77,11 @@ func NewCluster(cfg config.App, log log.Logger) (*Cluster, error) {
 	}
 
 	// Create GRPC Server
-	return &Cluster{log, grpcIntServer, httpServer, node, cfg.Api.Http.Port, cfg.Host.IntApiAddr}, nil
+	return &Cluster{log, grpcIntServer, httpServer, host, cfg.Api.Http.Port, cfg.Host.IntApiAddr}, nil
 }
 
 func (a *Cluster) Start() (err error) {
-	a.node.Start()
+	a.host.Start()
 	go func() {
 		a.log.Infof("Cluster HTTP Api listening on port %d", a.apiPortHttp)
 		err := a.httpServer.ListenAndServe(fmt.Sprintf(":%d", a.apiPortHttp))
@@ -115,5 +105,5 @@ func (a *Cluster) Start() (err error) {
 func (a *Cluster) Stop() {
 	a.httpServer.Shutdown()
 	a.grpcIntServer.Stop()
-	a.node.Stop()
+	a.host.Stop()
 }

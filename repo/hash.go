@@ -64,7 +64,10 @@ func NewHash(cfg *config.RepoHash, id uint64) (r Hash, err error) {
 		return
 	}
 	var mkdb = func(path string, envopt, dbopt int) (env *lmdb.Env, db lmdb.DBI, meta lmdb.DBI, err error) {
-		os.MkdirAll(path, 0777)
+		err = os.MkdirAll(path, 0777)
+		if err != nil {
+			return
+		}
 		env, err = lmdb.NewEnv()
 		env.SetMaxDBs(2)
 		env.SetMapSize(int64(1 << 40))

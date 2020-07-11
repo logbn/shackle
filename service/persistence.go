@@ -18,6 +18,7 @@ type Persistence interface {
 	Lock(batch entity.Batch) (res []uint8, err error)
 	Rollback(batch entity.Batch) (res []uint8, err error)
 	Commit(batch entity.Batch) (res []uint8, err error)
+	GetDatabases() []string
 	Start()
 	Stop()
 }
@@ -68,6 +69,11 @@ func (c *persistence) Init(cat entity.Catalog, hostID uint64) (err error) {
 		c.partitions[clusterID] = hashRepo
 	}
 	return
+}
+
+// GetDatabases returns a list of database names
+func (c *persistence) GetDatabases() []string {
+	return nil
 }
 
 // Lock determines whether each hash has been seen and locks for processing

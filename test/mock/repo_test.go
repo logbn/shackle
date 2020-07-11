@@ -67,5 +67,4 @@ func TestRepoFactoryhash(t *testing.T) {
 	repo.Close()
 	assert.Equal(t, repo.(*RepoHash).Closes, 2)
 
-
 }

@@ -12,7 +12,7 @@ import (
 
 // Lock accepts lock requests via api
 type Lock struct {
-	node    cluster.Node
+	host    cluster.Host
 	svcHash service.Hash
 }
 
@@ -21,7 +21,7 @@ func (c *Lock) ServeFastHTTP(ctx *fasthttp.RequestCtx) {
 	if err != nil {
 		return
 	}
-	res, err := c.node.Lock(batch)
+	res, err := c.host.Lock(batch)
 	if err != nil {
 		ctx.Response.SetStatusCode(500)
 		fmt.Fprintf(ctx, entity.ErrorToJson(err))

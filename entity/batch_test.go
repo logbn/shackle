@@ -102,3 +102,6 @@ func (h *mockHasher) Hash(a, b []byte) ([]byte, uint64) {
 	sha := sha1.Sum(append(a, b...))
 	return sha[:16], uint64(0)
 }
+func (h *mockHasher) GetPartition([]byte) uint64 {
+	return uint64(0)
+}

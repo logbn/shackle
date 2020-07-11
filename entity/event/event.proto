@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+option go_package = "highvolume.io/shackle/entity/event";
+
+package event;
+
+// Tick events are emitted by the deployment leader at regular intervals.
+// This maintains a monotonic clock for all clusters in the deployment.
+// These events are intended to be propagated to all clusters in the deployment.
+message Tick {
+	uint32 epoch = 1;
+}
+
+// HostMetaUpdate events are proposed by hosts upon joining a deployment.
+// They are design to update the node's information in the manifest if it requires updating.
+message HostMetaUpdate {
+	uint64 id = 1;
+	string intApiAddr = 2;
+	map<string, string> meta = 3;
+	repeated string databases = 4;
+}
+
+// HostStatusUpdate events are proposed by hosts to change their status.
+// They may also be proposed by the deployment leader if a node is determined to be down.
+message HostStatusUpdate {
+	uint64 id = 1;
+	uint32 status = 2;
+}

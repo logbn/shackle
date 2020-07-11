@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	// "github.com/benbjohnson/clock"
-	// "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"highvolume.io/shackle/config"
@@ -12,9 +12,9 @@ import (
 	"highvolume.io/shackle/test/mock"
 )
 
-func TestNode(t *testing.T) {
+func TestHost(t *testing.T) {
 	var (
-		node           *node
+		h              *host
 		err            error
 		logger         = &mock.Logger{}
 		svcHash        = &mock.ServiceHash{}
@@ -23,12 +23,13 @@ func TestNode(t *testing.T) {
 	)
 	initChan := make(chan entity.Catalog)
 	t.Run("New", func(t *testing.T) {
-		node, err = NewNode(
-			config.App{
-				Host: &config.Host{
-					ID:        1,
-					KeyLength: 16,
-				},
+		h, err = NewHost(
+			config.Host{
+				ID:        1,
+				DeploymentID: 1,
+				KeyLength: 16,
+				RaftAddr: "127.0.0.1:1001",
+				RaftDir: "/tmp",
 			},
 			logger,
 			svcHash,
@@ -37,12 +38,6 @@ func TestNode(t *testing.T) {
 			initChan,
 		)
 		require.Nil(t, err)
-		require.NotNil(t, node)
-	})
-	t.Run("Start", func(t *testing.T) {
-		node.Start()
-	})
-	t.Run("Stop", func(t *testing.T) {
-		node.Stop()
+		assert.NotNil(t, h)
 	})
 }

@@ -25,6 +25,7 @@ const (
 
 type hasher interface {
 	Hash(item, bucket []byte) (hash []byte, partition uint64)
+	GetPartition(hash []byte) (partition uint64)
 }
 
 var batchParserPool = sync.Pool{New: func() interface{} { return new(fastjson.Parser) }}

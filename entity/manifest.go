@@ -42,6 +42,7 @@ type Manifest struct {
 	Version      uint8       `json:"v"`
 	Status       uint8       `json:"status"`
 	Catalog      Catalog     `json:"catalog"`
+	Epoch        uint32      `json:"epoch"`
 	Migrations   []Migration `json:"migrations"`
 }
 
@@ -97,20 +98,37 @@ type Catalog struct {
 	Nodes        []Node    `json:"n"`
 	Witnesses    []Witness `json:"w"`
 
-	partitionMap map[uint64][]uint64
+	partitionHostMap map[uint64][]uint64
+	partitionNodeMap map[uint64]*Node
 }
 
 // GetPartitionMap returns a map of HostIDs keyed by ClusterID
 func (c *Catalog) GetPartitionMap() map[uint64][]uint64 {
-	if c.partitionMap != nil {
-		return c.partitionMap
+	if c.partitionHostMap != nil {
+		return c.partitionHostMap
 	}
 	var m = map[uint64][]uint64{}
 	for _, node := range c.Nodes {
 		m[node.ClusterID] = append(m[node.ClusterID], node.HostID)
 	}
-	c.partitionMap = m
+	c.partitionHostMap = m
 	return m
+}
+
+// GetLocalNodeByPartition returns the local node responsible for a partition
+func (c *Catalog) GetLocalNodeByPartition(p, hostID uint64) *Node {
+	if c.partitionNodeMap == nil {
+		c.partitionNodeMap = map[uint64]*Node{}
+		for _, node := range c.Nodes {
+			if node.HostID == hostID {
+				c.partitionNodeMap[node.ClusterID] = &node
+			}
+		}
+	}
+	if id, ok := c.partitionNodeMap[p]; ok {
+		return id
+	}
+	return nil
 }
 
 // GetHostPartitions returns a slice of clusterIDs for a given host id
@@ -130,6 +148,7 @@ type Host struct {
 	RaftAddr   string            `json:"r"`
 	IntApiAddr string            `json:"i"`
 	Meta       map[string]string `json:"m"`
+	Databases  []string          `json:"db"`
 }
 
 func (h *Host) Initializing() bool {

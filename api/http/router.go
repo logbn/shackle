@@ -11,14 +11,14 @@ import (
 // NewRouter returns a router
 func NewRouter(
 	log log.Logger,
-	node cluster.Node,
+	host cluster.Host,
 	svcHash service.Hash,
 ) *router.Router {
 	var (
 		index    = Index{}
-		lock     = Lock{node, svcHash}
-		rollback = Rollback{node, svcHash}
-		commit   = Commit{node, svcHash}
+		lock     = Lock{host, svcHash}
+		rollback = Rollback{host, svcHash}
+		commit   = Commit{host, svcHash}
 	)
 
 	r := router.New()

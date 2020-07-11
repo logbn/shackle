@@ -24,158 +24,6 @@ var _ = math.Inf
 // proto package needs to be updated.
 const _ = proto.ProtoPackageIsVersion3 // please upgrade the proto package
 
-// Node update request
-type NodeUpdateRequest struct {
-	Id                   string            `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	IntApiAddr           string            `protobuf:"bytes,2,opt,name=intApiAddr,proto3" json:"intApiAddr,omitempty"`
-	Meta                 map[string]string `protobuf:"bytes,3,rep,name=meta,proto3" json:"meta,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
-	VNodeCount           uint32            `protobuf:"varint,4,opt,name=vNodeCount,proto3" json:"vNodeCount,omitempty"`
-	XXX_NoUnkeyedLiteral struct{}          `json:"-"`
-	XXX_unrecognized     []byte            `json:"-"`
-	XXX_sizecache        int32             `json:"-"`
-}
-
-func (m *NodeUpdateRequest) Reset()         { *m = NodeUpdateRequest{} }
-func (m *NodeUpdateRequest) String() string { return proto.CompactTextString(m) }
-func (*NodeUpdateRequest) ProtoMessage()    {}
-func (*NodeUpdateRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_4ed77ff4c20ddf65, []int{0}
-}
-
-func (m *NodeUpdateRequest) XXX_Unmarshal(b []byte) error {
-	return xxx_messageInfo_NodeUpdateRequest.Unmarshal(m, b)
-}
-func (m *NodeUpdateRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	return xxx_messageInfo_NodeUpdateRequest.Marshal(b, m, deterministic)
-}
-func (m *NodeUpdateRequest) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_NodeUpdateRequest.Merge(m, src)
-}
-func (m *NodeUpdateRequest) XXX_Size() int {
-	return xxx_messageInfo_NodeUpdateRequest.Size(m)
-}
-func (m *NodeUpdateRequest) XXX_DiscardUnknown() {
-	xxx_messageInfo_NodeUpdateRequest.DiscardUnknown(m)
-}
-
-var xxx_messageInfo_NodeUpdateRequest proto.InternalMessageInfo
-
-func (m *NodeUpdateRequest) GetId() string {
-	if m != nil {
-		return m.Id
-	}
-	return ""
-}
-
-func (m *NodeUpdateRequest) GetIntApiAddr() string {
-	if m != nil {
-		return m.IntApiAddr
-	}
-	return ""
-}
-
-func (m *NodeUpdateRequest) GetMeta() map[string]string {
-	if m != nil {
-		return m.Meta
-	}
-	return nil
-}
-
-func (m *NodeUpdateRequest) GetVNodeCount() uint32 {
-	if m != nil {
-		return m.VNodeCount
-	}
-	return 0
-}
-
-// Node update reply
-type NodeUpdateReply struct {
-	Success              bool     `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
-	XXX_NoUnkeyedLiteral struct{} `json:"-"`
-	XXX_unrecognized     []byte   `json:"-"`
-	XXX_sizecache        int32    `json:"-"`
-}
-
-func (m *NodeUpdateReply) Reset()         { *m = NodeUpdateReply{} }
-func (m *NodeUpdateReply) String() string { return proto.CompactTextString(m) }
-func (*NodeUpdateReply) ProtoMessage()    {}
-func (*NodeUpdateReply) Descriptor() ([]byte, []int) {
-	return fileDescriptor_4ed77ff4c20ddf65, []int{1}
-}
-
-func (m *NodeUpdateReply) XXX_Unmarshal(b []byte) error {
-	return xxx_messageInfo_NodeUpdateReply.Unmarshal(m, b)
-}
-func (m *NodeUpdateReply) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	return xxx_messageInfo_NodeUpdateReply.Marshal(b, m, deterministic)
-}
-func (m *NodeUpdateReply) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_NodeUpdateReply.Merge(m, src)
-}
-func (m *NodeUpdateReply) XXX_Size() int {
-	return xxx_messageInfo_NodeUpdateReply.Size(m)
-}
-func (m *NodeUpdateReply) XXX_DiscardUnknown() {
-	xxx_messageInfo_NodeUpdateReply.DiscardUnknown(m)
-}
-
-var xxx_messageInfo_NodeUpdateReply proto.InternalMessageInfo
-
-func (m *NodeUpdateReply) GetSuccess() bool {
-	if m != nil {
-		return m.Success
-	}
-	return false
-}
-
-// Node status update request
-type NodeStatusUpdateRequest struct {
-	Id                   string   `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Status               string   `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
-	XXX_NoUnkeyedLiteral struct{} `json:"-"`
-	XXX_unrecognized     []byte   `json:"-"`
-	XXX_sizecache        int32    `json:"-"`
-}
-
-func (m *NodeStatusUpdateRequest) Reset()         { *m = NodeStatusUpdateRequest{} }
-func (m *NodeStatusUpdateRequest) String() string { return proto.CompactTextString(m) }
-func (*NodeStatusUpdateRequest) ProtoMessage()    {}
-func (*NodeStatusUpdateRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_4ed77ff4c20ddf65, []int{2}
-}
-
-func (m *NodeStatusUpdateRequest) XXX_Unmarshal(b []byte) error {
-	return xxx_messageInfo_NodeStatusUpdateRequest.Unmarshal(m, b)
-}
-func (m *NodeStatusUpdateRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	return xxx_messageInfo_NodeStatusUpdateRequest.Marshal(b, m, deterministic)
-}
-func (m *NodeStatusUpdateRequest) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_NodeStatusUpdateRequest.Merge(m, src)
-}
-func (m *NodeStatusUpdateRequest) XXX_Size() int {
-	return xxx_messageInfo_NodeStatusUpdateRequest.Size(m)
-}
-func (m *NodeStatusUpdateRequest) XXX_DiscardUnknown() {
-	xxx_messageInfo_NodeStatusUpdateRequest.DiscardUnknown(m)
-}
-
-var xxx_messageInfo_NodeStatusUpdateRequest proto.InternalMessageInfo
-
-func (m *NodeStatusUpdateRequest) GetId() string {
-	if m != nil {
-		return m.Id
-	}
-	return ""
-}
-
-func (m *NodeStatusUpdateRequest) GetStatus() string {
-	if m != nil {
-		return m.Status
-	}
-	return ""
-}
-
 // Batch operation
 type BatchOp struct {
 	Op                   uint32   `protobuf:"varint,1,opt,name=op,proto3" json:"op,omitempty"`
@@ -189,7 +37,7 @@ func (m *BatchOp) Reset()         { *m = BatchOp{} }
 func (m *BatchOp) String() string { return proto.CompactTextString(m) }
 func (*BatchOp) ProtoMessage()    {}
 func (*BatchOp) Descriptor() ([]byte, []int) {
-	return fileDescriptor_4ed77ff4c20ddf65, []int{3}
+	return fileDescriptor_4ed77ff4c20ddf65, []int{0}
 }
 
 func (m *BatchOp) XXX_Unmarshal(b []byte) error {
@@ -237,7 +85,7 @@ func (m *BatchReply) Reset()         { *m = BatchReply{} }
 func (m *BatchReply) String() string { return proto.CompactTextString(m) }
 func (*BatchReply) ProtoMessage()    {}
 func (*BatchReply) Descriptor() ([]byte, []int) {
-	return fileDescriptor_4ed77ff4c20ddf65, []int{4}
+	return fileDescriptor_4ed77ff4c20ddf65, []int{1}
 }
 
 func (m *BatchReply) XXX_Unmarshal(b []byte) error {
@@ -273,10 +121,6 @@ func (m *BatchReply) GetRes() []byte {
 }
 
 func init() {
-	proto.RegisterType((*NodeUpdateRequest)(nil), "grpcint.NodeUpdateRequest")
-	proto.RegisterMapType((map[string]string)(nil), "grpcint.NodeUpdateRequest.MetaEntry")
-	proto.RegisterType((*NodeUpdateReply)(nil), "grpcint.NodeUpdateReply")
-	proto.RegisterType((*NodeStatusUpdateRequest)(nil), "grpcint.NodeStatusUpdateRequest")
 	proto.RegisterType((*BatchOp)(nil), "grpcint.BatchOp")
 	proto.RegisterType((*BatchReply)(nil), "grpcint.BatchReply")
 }
@@ -286,32 +130,20 @@ func init() {
 }
 
 var fileDescriptor_4ed77ff4c20ddf65 = []byte{
-	// 396 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x7c, 0x52, 0x4d, 0x8f, 0xd3, 0x30,
-	0x14, 0x24, 0xc9, 0xb2, 0xdd, 0x7d, 0xec, 0x42, 0x30, 0x68, 0x89, 0x72, 0x40, 0x21, 0x70, 0xa8,
-	0x84, 0x94, 0xa0, 0xee, 0x81, 0x15, 0xb7, 0xb4, 0xe5, 0xc8, 0x87, 0x82, 0xb8, 0x70, 0x33, 0xc9,
-	0x53, 0x63, 0x35, 0x8d, 0x8d, 0xe3, 0x54, 0xca, 0x1f, 0xe2, 0x27, 0xf1, 0x7b, 0x90, 0x1d, 0xb7,
-	0xa4, 0x50, 0x7a, 0x8a, 0x67, 0xf2, 0x66, 0x3c, 0x6f, 0x64, 0xb8, 0xa1, 0x82, 0xa5, 0x2b, 0x29,
-	0x0a, 0xd6, 0x28, 0xf3, 0x4d, 0x84, 0xe4, 0x8a, 0x93, 0x89, 0xe5, 0xe2, 0x5f, 0x0e, 0x3c, 0xfe,
-	0xc8, 0x4b, 0xfc, 0x2a, 0x4a, 0xaa, 0x30, 0xc7, 0x1f, 0x1d, 0xb6, 0x8a, 0x3c, 0x04, 0x97, 0x95,
-	0x81, 0x13, 0x39, 0xd3, 0xcb, 0xdc, 0x65, 0x25, 0x79, 0x0e, 0xc0, 0x1a, 0x95, 0x09, 0x96, 0x95,
-	0xa5, 0x0c, 0x5c, 0xc3, 0x8f, 0x18, 0x72, 0x07, 0x67, 0x1b, 0x54, 0x34, 0xf0, 0x22, 0x6f, 0xfa,
-	0x60, 0xf6, 0x2a, 0xb1, 0xee, 0xc9, 0x3f, 0xce, 0xc9, 0x07, 0x54, 0xf4, 0x7d, 0xa3, 0x64, 0x9f,
-	0x1b, 0x85, 0x76, 0xde, 0xea, 0xa9, 0x05, 0xef, 0x1a, 0x15, 0x9c, 0x45, 0xce, 0xf4, 0x3a, 0x1f,
-	0x31, 0xe1, 0x5b, 0xb8, 0xdc, 0x4b, 0x88, 0x0f, 0xde, 0x1a, 0x7b, 0x9b, 0x4b, 0x1f, 0xc9, 0x53,
-	0xb8, 0xbf, 0xa5, 0x75, 0x87, 0x36, 0xd3, 0x00, 0xde, 0xb9, 0x77, 0x4e, 0xfc, 0x1a, 0x1e, 0x8d,
-	0x6f, 0x17, 0x75, 0x4f, 0x02, 0x98, 0xb4, 0x5d, 0x51, 0x60, 0xdb, 0x1a, 0x8b, 0x8b, 0x7c, 0x07,
-	0xe3, 0x0c, 0x9e, 0xe9, 0xe1, 0x2f, 0x8a, 0xaa, 0xae, 0x3d, 0x5d, 0xc5, 0x0d, 0x9c, 0xb7, 0x66,
-	0xcc, 0x5e, 0x69, 0x51, 0x9c, 0xc2, 0x64, 0x4e, 0x55, 0x51, 0x7d, 0x12, 0x5a, 0xc2, 0x85, 0x91,
-	0x5c, 0xe7, 0x2e, 0x17, 0x3a, 0x24, 0x53, 0xb8, 0x19, 0x14, 0x57, 0xf9, 0x00, 0xe2, 0x37, 0x00,
-	0x46, 0x30, 0x64, 0xf3, 0xc1, 0x43, 0x29, 0x77, 0xab, 0xa1, 0x94, 0x9a, 0x91, 0xb8, 0xd3, 0xe8,
-	0xe3, 0xec, 0xa7, 0x03, 0x57, 0x0b, 0xce, 0x65, 0xc9, 0x1a, 0xaa, 0x18, 0x6f, 0xc8, 0x12, 0xe0,
-	0xcf, 0x8e, 0x24, 0xfc, 0x7f, 0xed, 0x61, 0x70, 0xf4, 0x9f, 0xa8, 0xfb, 0xf8, 0x1e, 0xf9, 0x0c,
-	0xfe, 0xdf, 0xcb, 0x93, 0xe8, 0x60, 0xfe, 0x48, 0x2f, 0xa7, 0x1c, 0x67, 0x19, 0xc0, 0x12, 0x6b,
-	0x5c, 0x0d, 0x29, 0x6f, 0xe1, 0xc2, 0x22, 0x24, 0xfe, 0x5e, 0x65, 0xcb, 0x0a, 0x9f, 0x1c, 0x32,
-	0xd6, 0x62, 0xfe, 0xf2, 0xdb, 0x8b, 0x8a, 0xad, 0xaa, 0x2d, 0xaf, 0xbb, 0x0d, 0x26, 0x8c, 0xa7,
-	0x6d, 0x45, 0x8b, 0x75, 0x8d, 0xe9, 0xe8, 0x41, 0x7f, 0x3f, 0x37, 0x8f, 0xf9, 0xf6, 0x77, 0x00,
-	0x00, 0x00, 0xff, 0xff, 0xfe, 0x95, 0xa2, 0x8b, 0xe6, 0x02, 0x00, 0x00,
+	// 196 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xe2, 0x12, 0x4b, 0x2c, 0xc8, 0xd4,
+	0x4f, 0x2f, 0x2a, 0x48, 0xce, 0xcc, 0x2b, 0x01, 0xd3, 0x7a, 0x05, 0x45, 0xf9, 0x25, 0xf9, 0x42,
+	0xec, 0x50, 0x31, 0x25, 0x7d, 0x2e, 0x76, 0xa7, 0xc4, 0x92, 0xe4, 0x0c, 0xff, 0x02, 0x21, 0x3e,
+	0x2e, 0xa6, 0xfc, 0x02, 0x09, 0x46, 0x05, 0x46, 0x0d, 0xde, 0x20, 0xa6, 0xfc, 0x02, 0x21, 0x11,
+	0x2e, 0xd6, 0xcc, 0x92, 0xd4, 0xdc, 0x62, 0x09, 0x26, 0x05, 0x46, 0x0d, 0x9e, 0x20, 0x08, 0x47,
+	0xc9, 0x80, 0x8b, 0x0b, 0xac, 0x21, 0x28, 0xb5, 0x20, 0xa7, 0x52, 0x48, 0x80, 0x8b, 0x39, 0xb5,
+	0xa8, 0x08, 0xac, 0x89, 0x33, 0x08, 0xc4, 0x04, 0x89, 0x14, 0xa5, 0xc2, 0xf4, 0x80, 0x98, 0x46,
+	0x8e, 0x5c, 0x5c, 0x2e, 0xa9, 0x39, 0xa9, 0xe9, 0x89, 0x25, 0x99, 0xf9, 0x79, 0x42, 0xc6, 0x5c,
+	0x1c, 0x50, 0x5e, 0xaa, 0x90, 0x80, 0x1e, 0xd4, 0x19, 0x7a, 0x50, 0x37, 0x48, 0x09, 0xa3, 0x8a,
+	0x80, 0x2d, 0x51, 0x62, 0x70, 0x52, 0x8e, 0x52, 0xcc, 0xc8, 0x4c, 0xcf, 0x28, 0xcb, 0xcf, 0x29,
+	0xcd, 0x4d, 0xd5, 0xcb, 0xcc, 0xd7, 0x2f, 0xce, 0x48, 0x4c, 0xce, 0xce, 0x49, 0xd5, 0x47, 0xf2,
+	0x5e, 0x12, 0x1b, 0xd8, 0x6b, 0xc6, 0x80, 0x00, 0x00, 0x00, 0xff, 0xff, 0x91, 0xa9, 0x17, 0xa5,
+	0xf4, 0x00, 0x00, 0x00,
 }
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -321,118 +153,6 @@ var _ grpc.ClientConnInterface
 // This is a compile-time assertion to ensure that this generated file
 // is compatible with the grpc package it is being compiled against.
 const _ = grpc.SupportPackageIsVersion6
-
-// CoordinationClient is the client API for Coordination service.
-//
-// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://godoc.org/google.golang.org/grpc#ClientConn.NewStream.
-type CoordinationClient interface {
-	// NodeUpdate is used during cluster initialization to ensure leader has correct follower grpc address
-	NodeUpdate(ctx context.Context, in *NodeUpdateRequest, opts ...grpc.CallOption) (*NodeUpdateReply, error)
-	// NodeStatusUpdate is used to update a node's status
-	NodeStatusUpdate(ctx context.Context, in *NodeStatusUpdateRequest, opts ...grpc.CallOption) (*NodeUpdateReply, error)
-}
-
-type coordinationClient struct {
-	cc grpc.ClientConnInterface
-}
-
-func NewCoordinationClient(cc grpc.ClientConnInterface) CoordinationClient {
-	return &coordinationClient{cc}
-}
-
-func (c *coordinationClient) NodeUpdate(ctx context.Context, in *NodeUpdateRequest, opts ...grpc.CallOption) (*NodeUpdateReply, error) {
-	out := new(NodeUpdateReply)
-	err := c.cc.Invoke(ctx, "/grpcint.Coordination/NodeUpdate", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *coordinationClient) NodeStatusUpdate(ctx context.Context, in *NodeStatusUpdateRequest, opts ...grpc.CallOption) (*NodeUpdateReply, error) {
-	out := new(NodeUpdateReply)
-	err := c.cc.Invoke(ctx, "/grpcint.Coordination/NodeStatusUpdate", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-// CoordinationServer is the server API for Coordination service.
-type CoordinationServer interface {
-	// NodeUpdate is used during cluster initialization to ensure leader has correct follower grpc address
-	NodeUpdate(context.Context, *NodeUpdateRequest) (*NodeUpdateReply, error)
-	// NodeStatusUpdate is used to update a node's status
-	NodeStatusUpdate(context.Context, *NodeStatusUpdateRequest) (*NodeUpdateReply, error)
-}
-
-// UnimplementedCoordinationServer can be embedded to have forward compatible implementations.
-type UnimplementedCoordinationServer struct {
-}
-
-func (*UnimplementedCoordinationServer) NodeUpdate(ctx context.Context, req *NodeUpdateRequest) (*NodeUpdateReply, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method NodeUpdate not implemented")
-}
-func (*UnimplementedCoordinationServer) NodeStatusUpdate(ctx context.Context, req *NodeStatusUpdateRequest) (*NodeUpdateReply, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method NodeStatusUpdate not implemented")
-}
-
-func RegisterCoordinationServer(s *grpc.Server, srv CoordinationServer) {
-	s.RegisterService(&_Coordination_serviceDesc, srv)
-}
-
-func _Coordination_NodeUpdate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(NodeUpdateRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(CoordinationServer).NodeUpdate(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/grpcint.Coordination/NodeUpdate",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(CoordinationServer).NodeUpdate(ctx, req.(*NodeUpdateRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _Coordination_NodeStatusUpdate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(NodeStatusUpdateRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(CoordinationServer).NodeStatusUpdate(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/grpcint.Coordination/NodeStatusUpdate",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(CoordinationServer).NodeStatusUpdate(ctx, req.(*NodeStatusUpdateRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-var _Coordination_serviceDesc = grpc.ServiceDesc{
-	ServiceName: "grpcint.Coordination",
-	HandlerType: (*CoordinationServer)(nil),
-	Methods: []grpc.MethodDesc{
-		{
-			MethodName: "NodeUpdate",
-			Handler:    _Coordination_NodeUpdate_Handler,
-		},
-		{
-			MethodName: "NodeStatusUpdate",
-			Handler:    _Coordination_NodeStatusUpdate_Handler,
-		},
-	},
-	Streams:  []grpc.StreamDesc{},
-	Metadata: "api/grpcint/grpc.proto",
-}
 
 // DelegationClient is the client API for Delegation service.
 //
