@@ -21,10 +21,11 @@ repo:
     expiration_batch_size: 1000
     key_expiration: 730h
     lock_expiration: 10s
+    sweep_interval: 10s
+    path_ix: /data/node2
     disks:
       - path: /data/node2
         capacity: 8
-    sweep_interval: 10s
 
 monitor:
   prometheus:

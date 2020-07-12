@@ -12,13 +12,13 @@ import (
 )
 
 type Hash interface {
-	Hash([]byte, []byte) ([]byte, uint64)
-	GetPartition([]byte) uint64
+	Hash([]byte, []byte) ([]byte, uint16)
+	GetPartition([]byte) uint16
 }
 
 type hash struct {
 	hashFunc func([]byte) []byte
-	partMask uint64
+	partMask uint16
 }
 
 // NewHash returns a hash service
@@ -59,19 +59,19 @@ func NewHash(cfg *config.App) (r *hash, err error) {
 	}
 	// Partition bitmask
 	bits := int(math.Log2(float64(partitions)))
-	mask := uint64(math.MaxUint16 >> (64 - bits) << (64 - bits))
+	mask := uint16(math.MaxUint16 >> (16 - bits) << (16 - bits))
 	return &hash{hashFunc, mask}, nil
 }
 
 // Hash takes a byte array and returns a peppered hash
-func (h *hash) Hash(item, bucket []byte) (out []byte, p uint64) {
+func (h *hash) Hash(item, bucket []byte) (out []byte, p uint16) {
 	out = h.hashFunc(append(bucket, item...))
 	p = h.GetPartition(out)
 	return
 }
 
 // GetPartition returns just the partition
-func (h *hash) GetPartition(item []byte) (p uint64) {
-	p = binary.BigEndian.Uint64(item[:8]) & h.partMask
+func (h *hash) GetPartition(item []byte) (p uint16) {
+	p = binary.BigEndian.Uint16(item[:2]) & h.partMask
 	return
 }

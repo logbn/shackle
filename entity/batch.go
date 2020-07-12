@@ -24,8 +24,8 @@ const (
 )
 
 type hasher interface {
-	Hash(item, bucket []byte) (hash []byte, partition uint64)
-	GetPartition(hash []byte) (partition uint64)
+	Hash(item, bucket []byte) (hash []byte, partition uint16)
+	GetPartition(hash []byte) (partition uint16)
 }
 
 var batchParserPool = sync.Pool{New: func() interface{} { return new(fastjson.Parser) }}
@@ -34,13 +34,13 @@ var batchParserPool = sync.Pool{New: func() interface{} { return new(fastjson.Pa
 type Batch []BatchItem
 type BatchItem struct {
 	N         int
-	Partition uint64
+	Partition uint16
 	Hash      []byte
 }
 
 // Partitioned splits a batch into a map of sub-batches keyed by partition prefix
-func (b Batch) Partitioned() (batches map[uint64]Batch) {
-	batches = map[uint64]Batch{}
+func (b Batch) Partitioned() (batches map[uint16]Batch) {
+	batches = map[uint16]Batch{}
 	for i, item := range b {
 		batches[item.Partition] = append(batches[item.Partition], item)
 		batches[item.Partition][len(batches[item.Partition])-1].N = i
@@ -98,7 +98,7 @@ func BatchFromJson(body, bucket []byte, h hasher) (ent Batch, err error) {
 	}
 	ent = make(Batch, len(values))
 	var hash []byte
-	var partition uint64
+	var partition uint16
 	for i, sv := range values {
 		hash, partition = h.Hash(sv.GetStringBytes(), bucket)
 		ent[i] = BatchItem{i, partition, hash}

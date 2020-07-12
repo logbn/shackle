@@ -64,12 +64,12 @@ func main() {
 
 			cluster, err = app.NewCluster(cfg, logger)
 			if err != nil {
-				logger.Fatalf("Error Starting Cluster Node %d - %s", i+1, err.Error())
+				logger.Fatalf("Error Starting Host %d - %s", i+1, err.Error())
 			}
-			logger.Infof("Starting Cluster Node %d", i)
+			logger.Infof("Starting Host %d", i+1)
 			err = cluster.Start()
 			if err != nil {
-				logger.Fatalf("Error Starting Cluster Node %d - %s", i+1, err.Error())
+				logger.Fatalf("Error Starting Host %d - %s", i+1, err.Error())
 			}
 
 			started <- true
@@ -78,7 +78,7 @@ func main() {
 
 			// App Shutdown
 			if cluster != nil {
-				logger.Infof("Stopping Cluster Node %d", i)
+				logger.Infof("Stopping Host %d", i)
 				cluster.Stop()
 			}
 			logger.Infoln("Done")

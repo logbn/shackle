@@ -26,3 +26,8 @@ message HostStatusUpdate {
 	uint64 id = 1;
 	uint32 status = 2;
 }
+
+// DeploymentStatusUpdate events are proposed by deployment leaders to change the status of the deployment.
+message DeploymentStatusUpdate {
+	uint32 status = 1;
+}

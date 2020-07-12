@@ -39,7 +39,7 @@ const (
 // Manifest
 type Manifest struct {
 	DeploymentID uint64      `json:"id"`
-	Version      uint8       `json:"v"`
+	Version      uint8       `json:"version"`
 	Status       uint8       `json:"status"`
 	Catalog      Catalog     `json:"catalog"`
 	Epoch        uint32      `json:"epoch"`
@@ -87,27 +87,39 @@ func (m *Manifest) GetHostByRaftAddr(raftAddr string) *Host {
 	return nil
 }
 
+// Catalog contains a complete snapshot of the current physical and logical distribution of data within the deployment.
 type Catalog struct {
-	Version      string    `json:"v"`
-	Partitions   int       `json:"p"`
-	ReplicaCount int       `json:"rc"`
-	WitnessCount int       `json:"wc"`
-	KeyLength    uint8     `json:"kl"`
-	Vary         []string  `json:"v"`
-	Hosts        []Host    `json:"h"`
-	Nodes        []Node    `json:"n"`
-	Witnesses    []Witness `json:"w"`
+	Version      string    `json:"version"`
+	Partitions   int       `json:"partitions"`
+	ReplicaCount int       `json:"replicationCount"`
+	WitnessCount int       `json:"witnessCount"`
+	KeyLength    uint8     `json:"keyLength"`
+	Vary         []string  `json:"vary"`
+	Hosts        []Host    `json:"hosts"`
+	Nodes        []Node    `json:"nodes"`
+	Witnesses    []Witness `json:"witnesses"`
 
-	partitionHostMap map[uint64][]uint64
-	partitionNodeMap map[uint64]*Node
+	partitionHostMap map[uint16][]uint64
+	partitionNodeMap map[uint16]*Node
+}
+
+// FromJson marshals the catalog to json
+func (c *Catalog) ToJson() (data []byte) {
+	data, _ = json.Marshal(c)
+	return
+}
+
+// FromJson unmarshals json into the present catalog
+func (c *Catalog) FromJson(data []byte) error {
+	return json.Unmarshal(data, c)
 }
 
 // GetPartitionMap returns a map of HostIDs keyed by ClusterID
-func (c *Catalog) GetPartitionMap() map[uint64][]uint64 {
+func (c *Catalog) GetPartitionMap() map[uint16][]uint64 {
 	if c.partitionHostMap != nil {
 		return c.partitionHostMap
 	}
-	var m = map[uint64][]uint64{}
+	var m = map[uint16][]uint64{}
 	for _, node := range c.Nodes {
 		m[node.ClusterID] = append(m[node.ClusterID], node.HostID)
 	}
@@ -116,9 +128,9 @@ func (c *Catalog) GetPartitionMap() map[uint64][]uint64 {
 }
 
 // GetLocalNodeByPartition returns the local node responsible for a partition
-func (c *Catalog) GetLocalNodeByPartition(p, hostID uint64) *Node {
+func (c *Catalog) GetLocalNodeByPartition(p uint16, hostID uint64) *Node {
 	if c.partitionNodeMap == nil {
-		c.partitionNodeMap = map[uint64]*Node{}
+		c.partitionNodeMap = map[uint16]*Node{}
 		for _, node := range c.Nodes {
 			if node.HostID == hostID {
 				c.partitionNodeMap[node.ClusterID] = &node
@@ -132,7 +144,7 @@ func (c *Catalog) GetLocalNodeByPartition(p, hostID uint64) *Node {
 }
 
 // GetHostPartitions returns a slice of clusterIDs for a given host id
-func (c *Catalog) GetHostPartitions(hostID uint64) (ret []uint64) {
+func (c *Catalog) GetHostPartitions(hostID uint64) (ret []uint16) {
 	for _, node := range c.Nodes {
 		if node.HostID == hostID {
 			ret = append(ret, node.ClusterID)
@@ -144,10 +156,10 @@ func (c *Catalog) GetHostPartitions(hostID uint64) (ret []uint64) {
 // Host contains live configuration relevant to node hosts
 type Host struct {
 	ID         uint64            `json:"id"`
-	Status     uint8             `json:"s"`
-	RaftAddr   string            `json:"r"`
-	IntApiAddr string            `json:"i"`
-	Meta       map[string]string `json:"m"`
+	Status     uint8             `json:"status"`
+	RaftAddr   string            `json:"raftAddr"`
+	IntApiAddr string            `json:"intApiAddr"`
+	Meta       map[string]string `json:"meta"`
 	Databases  []string          `json:"db"`
 }
 
@@ -169,17 +181,17 @@ func (h *Host) Recovering() bool {
 
 type Node struct {
 	ID        uint64 `json:"id"`
-	Status    uint8  `json:"s"`
-	HostID    uint64 `json:"h"`
-	ClusterID uint64 `json:"c"`
-	IsLeader  bool   `json:"l"`
+	Status    uint8  `json:"status"`
+	HostID    uint64 `json:"hostId"`
+	ClusterID uint16 `json:"clusterId"`
+	IsLeader  bool   `json:"isLeader"`
 }
 
 type Witness struct {
 	ID        uint64 `json:"id"`
-	Status    uint8  `json:"s"`
-	HostID    uint64 `json:"h"`
-	ClusterID uint64 `json:"c"`
+	Status    uint8  `json:"status"`
+	HostID    uint64 `json:"hostId"`
+	ClusterID uint16 `json:"clusterId"`
 }
 
 // Allocate is called during deployment initialization to prescribe cluster placement.
@@ -189,30 +201,31 @@ type Witness struct {
 // - Only allocates initial state and has no concept of node redistribution or repartitioning
 // Uses a Bitwise Key Prefix Partitioning Scheme:
 // https://play.golang.org/p/X2F4RQnptAk
-func (m *Manifest) Allocate() (err error) {
+func (m *Manifest) Allocate() (cat *Catalog, err error) {
 	if !m.Initializing() {
 		err = fmt.Errorf("Deployment is not in initialization state")
 		return
 	}
-	var cat = &m.Catalog
-	var hostCount = len(cat.Hosts)
+	var hostCount = len(m.Catalog.Hosts)
 	if hostCount < 1 {
 		err = fmt.Errorf("Hosts not yet defined")
 		return
 	}
-	if cat.Nodes != nil {
+	if m.Catalog.Nodes != nil {
 		err = fmt.Errorf("Nodes already allocated")
 		return
 	}
-	if cat.Witnesses != nil {
+	if m.Catalog.Witnesses != nil {
 		err = fmt.Errorf("Witnesses already allocated")
 		return
 	}
-	var log2pc = math.Log2(float64(cat.Partitions))
+	var log2pc = math.Log2(float64(m.Catalog.Partitions))
 	if math.Trunc(log2pc) != log2pc {
 		err = fmt.Errorf("Cluster partition count must be power of 2")
 		return
 	}
+	cat = &Catalog{}
+	cat.FromJson(m.Catalog.ToJson())
 	// Limit replica count to node count
 	// Distributing 3 replicas across 2 nodes is nonsensical.
 	var replicaCount = cat.ReplicaCount
@@ -239,7 +252,7 @@ func (m *Manifest) Allocate() (err error) {
 				ID:        uint64(n + 1),
 				Status:    NODE_STATUS_STAGING,
 				HostID:    cat.Hosts[n2%hostCount].ID,
-				ClusterID: uint64(i << (64 - bits)),
+				ClusterID: uint16(i << (16 - bits)),
 				IsLeader:  j == 0,
 			})
 			if j == 0 {
@@ -253,7 +266,7 @@ func (m *Manifest) Allocate() (err error) {
 				ID:        uint64(n + 1),
 				Status:    NODE_STATUS_STAGING,
 				HostID:    cat.Hosts[n2%hostCount].ID,
-				ClusterID: uint64(i << (64 - bits)),
+				ClusterID: uint16(i << (16 - bits)),
 			})
 			n++
 			n2++
@@ -263,10 +276,10 @@ func (m *Manifest) Allocate() (err error) {
 }
 
 type Migration struct {
-	Type     string  `json:"t"`
-	Status   string  `json:"s"`
-	Version  int     `json:"v"`
-	Progress int     `json:"p"`
-	From     Catalog `json:"fr"`
+	Type     string  `json:"type"`
+	Status   string  `json:"status"`
+	Version  int     `json:"version"`
+	Progress int     `json:"progress"`
+	From     Catalog `json:"from"`
 	To       Catalog `json:"to"`
 }

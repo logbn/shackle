@@ -13,6 +13,7 @@ import (
 	"github.com/benbjohnson/clock"
 	"github.com/golang/protobuf/proto"
 	"github.com/lni/dragonboat/v3"
+	dbclient "github.com/lni/dragonboat/v3/client"
 	dbconf "github.com/lni/dragonboat/v3/config"
 	dblog "github.com/lni/dragonboat/v3/logger"
 	dbio "github.com/lni/dragonboat/v3/raftio"
@@ -34,12 +35,15 @@ const (
 	EVENT_TYPE_TICK               uint8 = 2
 	EVENT_TYPE_HOST_META_UPDATE   uint8 = 3
 	EVENT_TYPE_HOST_STATUS_UPDATE uint8 = 4
+	EVENT_TYPE_ALLOCATE           uint8 = 5
+	EVENT_TYPE_DEPLOYMENT_STATUS_UPDATE uint8 = 6
 
 	EVENT_RESPONSE_FAILURE uint64 = 0
 	EVENT_RESPONSE_SUCCESS uint64 = 1
 
 	metaClusterID = math.MaxUint64
-	raftTimeout = 3 * time.Second
+	raftTimeout = 5 * time.Second
+	rttMilliseconds = 200
 )
 
 // Host runs the deployment's meta cluster.
@@ -83,6 +87,7 @@ type host struct {
 	keylen         int
 	factory        func(uint64, uint64) dbsm.IStateMachine
 	nodes          map[uint64]Node
+	metaSession    *dbclient.Session
 }
 
 // NewHost returns a new host
@@ -124,18 +129,53 @@ func NewHost(
 		h.nodeID = nodeID
 		return h
 	}
-	dblog.GetLogger("raft").SetLevel(dblog.INFO)
-	dblog.GetLogger("rsm").SetLevel(dblog.INFO)
-	dblog.GetLogger("transport").SetLevel(dblog.INFO)
-	dblog.GetLogger("grpc").SetLevel(dblog.INFO)
+	// level := dblog.WARNING
+	level := dblog.INFO
+	dblog.GetLogger("dragonboat").SetLevel(level)
+	dblog.GetLogger("transport").SetLevel(level)
+	dblog.GetLogger("logdb").SetLevel(level)
+	dblog.GetLogger("raft").SetLevel(level)
+	dblog.GetLogger("grpc").SetLevel(level)
+	dblog.GetLogger("rsm").SetLevel(level)
 	h.nodeHost, err = dragonboat.NewNodeHost(dbconf.NodeHostConfig{
 		DeploymentID:      cfg.DeploymentID,
 		NodeHostDir:       cfg.RaftDir,
-		RTTMillisecond:    1000,
+		RTTMillisecond:    rttMilliseconds,
 		RaftAddress:       cfg.RaftAddr,
 		EnableMetrics:     true,
 		RaftEventListener: h,
 	})
+	return
+}
+
+// Start starts the service
+func (h *host) Start() (err error) {
+	h.svcDelegation.Start()
+	h.svcPersistence.Start()
+	var initialMembers = map[uint64]string{}
+	if len(h.cfg.Join) > 0 {
+		for _, host := range h.cfg.Join {
+			initialMembers[host.ID] = host.RaftAddr
+		}
+	}
+	clusterConfig := dbconf.Config{
+		NodeID:             h.id,
+		ClusterID:          metaClusterID,
+		ElectionRTT:        10,
+		HeartbeatRTT:       1,
+		CheckQuorum:        true,
+		SnapshotEntries:    10,
+		CompactionOverhead: 5,
+	}
+	err = h.nodeHost.StartCluster(initialMembers, !h.cfg.RaftSolo, h.factory, clusterConfig)
+	go func() {
+		for !h.active {
+			time.Sleep(time.Second)
+			if h.starting {
+				h.init()
+			}
+		}
+	}()
 	return
 }
 
@@ -323,60 +363,29 @@ func (h *host) PlanDelegation(batch entity.Batch) (plan entity.BatchPlan, err er
 	return
 }
 
-// Start starts the service
-func (h *host) Start() (err error) {
-	go func() {
-		for {
-			select {
-			case cat, ok := <-h.initChan:
-				if !ok {
-					return
-				}
-				err := h.svcPersistence.Init(cat, h.id)
-				if err != nil {
-					panic(err.Error())
-					return
-				}
-				h.active = true
-			}
-		}
-	}()
-	h.svcDelegation.Start()
-	h.svcPersistence.Start()
-	var initialMembers = map[uint64]string{}
-	if len(h.cfg.Join) > 0 {
-		for _, host := range h.cfg.Join {
-			initialMembers[host.ID] = host.RaftAddr
-		}
-	}
-	clusterConfig := dbconf.Config{
-		NodeID:             h.id,
-		ClusterID:          metaClusterID,
-		ElectionRTT:        10,
-		HeartbeatRTT:       1,
-		CheckQuorum:        true,
-		SnapshotEntries:    10,
-		CompactionOverhead: 5,
-	}
-	err = h.nodeHost.StartCluster(initialMembers, !h.cfg.RaftSolo, h.factory, clusterConfig)
-	if err != nil {
-		return
-	}
-	return
-}
-
 // LeaderUpdated receives leader promotion notifications
 func (h *host) LeaderUpdated(info dbio.LeaderInfo) {
 	if h.leaderID != info.LeaderID {
 		rs, err := h.nodeHost.ReadIndex(metaClusterID, raftTimeout)
+		if rs != nil {
+			defer rs.Release()
+		}
 		if err != nil {
 			return
 		}
 		<-rs.CompletedC
+		h.log.Debugf("[Host %d] New Leader: %d", h.id, info.LeaderID)
+		status, err := h.getStatus()
+		if err != nil {
+			h.log.Errorf(err.Error())
+		}
+		if status == entity.HOST_STATUS_ACTIVE {
+			h.log.Infof("[Host %d] Active", h.id)
+			h.active = true
+		} else {
+			h.starting = true
+		}
 		h.leaderID = info.LeaderID
-	}
-	if !h.active && !h.starting {
-		h.init()
 	}
 }
 
@@ -386,52 +395,83 @@ func (h *host) isLeader() bool {
 
 // init is idempotent. It is called upon any state change event before the host is active and executed serially.
 func (h *host) init() {
-	if h.active {
-		return
-	}
-	h.starting = true
-	h.initmutex.Lock()
-	defer h.initmutex.Unlock()
-	defer func() { h.starting = false }()
-	// Initialize manifest
-	if h.manifest.Version == 0 && h.isLeader() {
-		h.initializeManifest()
+	if h.active || !h.starting {
 		return
 	}
 
+	// Initialize manifest
+	if h.manifest.Version == 0 {
+		if h.isLeader() {
+			h.log.Debugf("[Host %d] Initializing Manifest", h.id)
+			h.initializeManifest()
+		} else {
+			h.log.Debugf("[Host %d] Waiting for Manifest", h.id)
+		}
+		return
+	}
 	// Update host meta if necessary
 	updated, err := h.updateMeta()
 	if err != nil {
-		h.log.Errorf(err.Error())
+		h.log.Errorf("[Host %d] %s", h.id, err.Error())
 		return
 	}
 	if updated {
+		h.log.Debugf("[Host %d] Meta Updated", h.id)
 		return
 	}
-
-	h.log.Printf("init: %s", string( h.manifest.ToJson()))
-
-	// Stop if any nodes have not yet reported meta
-	for _, host := range h.manifest.Catalog.Hosts {
-		if host.IntApiAddr == "" {
+	if h.isLeader() {
+		// Stop if any nodes have not yet reported meta
+		for _, host := range h.manifest.Catalog.Hosts {
+			if host.IntApiAddr == "" {
+				h.log.Errorf("[Host %d] Waiting for host meta", h.id)
+				return
+			}
+		}
+		// Schedule allocation
+		if h.manifest.Initializing() {
+			h.log.Debugf("[Host %d] Allocating %d partitions", h.id, h.manifest.Catalog.Partitions)
+			catalog, err := h.manifest.Allocate()
+			if err != nil {
+				h.log.Errorf(err.Error())
+				return
+			}
+			_, err = h.syncPropose(h.wrapMsg(EVENT_TYPE_ALLOCATE, catalog.ToJson()))
+			if err != nil {
+				h.log.Errorf("[Host %d] Error proposing allocation: %s", h.id, err.Error())
+				return
+			}
+			// h.manifest.Status = entity.DEPLOYMENT_STATUS_ALLOCATING
 			return
+		} else {
+			h.log.Debugf("[Host %d] Manifest not initializing (%d)", h.id, h.manifest.Status)
+		}
+		// Stop if any nodes have not yet reported meta
+		for _, host := range h.manifest.Catalog.Hosts {
+			if !host.Allocated(){
+				h.log.Errorf("[Host %d] Waiting for host %d to allocate", h.id, host.ID)
+				return
+			}
+		}
+		h.updateDeploymentStatus(entity.DEPLOYMENT_STATUS_ACTIVE)
+	}
+	// Activate Cluster
+
+	// Set status to active
+	if h.manifest.Active() {
+		err = h.updateStatus(entity.HOST_STATUS_ACTIVE)
+		if err == nil {
+			h.log.Infof("[Host %d] active", h.id)
+			h.active = true
+			h.starting = false
 		}
 	}
-
-	h.log.Println("okay")
-
-	h.active = true
-	// Stop if any nodes have not yet reported meta
-	// Schedule allocation
-	// Perform allocation
-	// Stop if any nodes have not yet confirmed allocation
-	// Activate Cluster
-	// Set status to active
-
 }
 
 // Update satisfies statemachine.IStateMachine
 // It receives protocol buffer messages and propagates them to handlers.
+//
+//    IF THIS METHOD RETURNS AN ERROR, DRAGONBOAT WILL PANIC.
+//
 func (h *host) Update(msg []byte) (reply dbsm.Result, err error) {
 	if len(msg) < 2 {
 		err = fmt.Errorf("Invalid Event (min len 2)")
@@ -446,25 +486,45 @@ func (h *host) Update(msg []byte) (reply dbsm.Result, err error) {
 			h.log.Debugf("Ignoring duplicate manifest initialization")
 		}
 	case EVENT_TYPE_TICK:
-		e := event.Tick{}
-		proto.Unmarshal(msg[2:], &e)
-		err = h.handleTick(e)
+		err = h.handleTick(msg[2:])
 	case EVENT_TYPE_HOST_META_UPDATE:
-		e := event.HostMetaUpdate{}
-		proto.Unmarshal(msg[2:], &e)
-		err = h.handleMetaUpdate(e)
+		err = h.handleMetaUpdate(msg[2:])
 	case EVENT_TYPE_HOST_STATUS_UPDATE:
-		e := event.HostStatusUpdate{}
-		proto.Unmarshal(msg[2:], &e)
-		err = h.handleStatusUpdate(e)
+		err = h.handleStatusUpdate(msg[2:])
+	case EVENT_TYPE_DEPLOYMENT_STATUS_UPDATE:
+		err = h.handleDeploymentStatusUpdate(msg[2:])
+	case EVENT_TYPE_ALLOCATE:
+		err = h.allocate(msg[2:])
 	default:
 		err = fmt.Errorf("Unrecognized event type (%d)", uint8(msg[1]))
 	}
 	if err == nil {
 		reply.Value = EVENT_RESPONSE_SUCCESS
 	} else {
+		h.log.Errorf(err.Error())
+		err = nil
 		reply.Value = EVENT_RESPONSE_FAILURE
 	}
+	return
+}
+
+// Initialize vnodes. Special operation of the persistence service.
+func (h *host) allocate(data []byte) (err error) {
+	h.log.Debugf("[Host %d] allocate called", h.id)
+	h.manifest.Status = entity.DEPLOYMENT_STATUS_ALLOCATING
+	h.manifest.Catalog.FromJson(data)
+	err = h.svcPersistence.Init(h.manifest.Catalog, h.id)
+	if err != nil {
+		h.log.Debugf("[Host %d] Not allocated %s", h.id, err.Error())
+		return
+	}
+	h.log.Debugf("[Host %d] Allocated", h.id)
+	go func() {
+		err = h.updateStatus(entity.HOST_STATUS_ALLOCATED)
+		if err != nil {
+			h.log.Debugf("[Host %d] Error updating status %s", h.id, err.Error())
+		}
+	}()
 	return
 }
 
@@ -472,17 +532,27 @@ func (h *host) wrapMsg(etype uint8, msg []byte) []byte {
 	return append([]byte{EVENT_SCHEMA_VERSION, etype}, msg...)
 }
 
+func (h *host) getSession() (ctx context.Context, sess *dbclient.Session, err error) {
+	ctx, _ = context.WithTimeout(context.Background(), raftTimeout)
+	ctx2, _ := context.WithTimeout(context.Background(), raftTimeout)
+	sess, err = h.nodeHost.SyncGetSession(ctx2, metaClusterID)
+	if err != nil {
+		err = fmt.Errorf("Error getting meta session: %s", err.Error())
+		return
+	}
+	return
+}
+
 // Convenience method that wraps SyncPropose w/ session acquisition
 // May be overkill. Have to study expected dragonboat session management.
 func (h *host) syncPropose(msg []byte) (res dbsm.Result, err error) {
-	ctx, _ := context.WithTimeout(context.Background(), raftTimeout)
-	sess, err := h.nodeHost.SyncGetSession(ctx, metaClusterID)
+	ctx, sess, err := h.getSession()
 	if err != nil {
-		h.log.Errorf("Error getting meta session: %s", err.Error())
 		return
 	}
-	ctx, _ = context.WithTimeout(context.Background(), raftTimeout)
-	return h.nodeHost.SyncPropose(ctx, sess, msg)
+	res, err = h.nodeHost.SyncPropose(ctx, sess, msg)
+	sess.ProposalCompleted()
+	return
 }
 
 // updateMeta returns false if meta is up to date and true otherwise, proposing host meta data update.
@@ -490,7 +560,7 @@ func (h *host) updateMeta() (updated bool, err error) {
 	databases := h.svcPersistence.GetDatabases()
 	host := h.manifest.GetHostByID(h.id)
 	if host == nil {
-		err = fmt.Errorf("Unknown host %d", h.id)
+		err = fmt.Errorf("Unknown host c %d", h.id)
 		return
 	}
 	if host.IntApiAddr == h.cfg.IntApiAddr &&
@@ -515,25 +585,50 @@ func (h *host) updateMeta() (updated bool, err error) {
 	return true, nil
 }
 
-// handleHostMetaUpdate handles host meta update events
-func (h *host) handleMetaUpdate(e event.HostMetaUpdate) (err error) {
+// handleMetaUpdate handles host meta update events
+func (h *host) handleMetaUpdate(msg []byte) (err error) {
+	e := event.HostMetaUpdate{}
+	err = proto.Unmarshal(msg, &e)
+	if err != nil {
+		return
+	}
 	host := h.manifest.GetHostByID(e.Id)
 	if host == nil {
-		err = fmt.Errorf("Unknown host %d", e.Id)
+		err = fmt.Errorf("Unknown host a %d", e.Id)
 		h.log.Errorf(err.Error())
 		return
 	}
 	host.Meta = e.Meta
 	host.Databases = e.Databases
 	host.IntApiAddr = e.IntApiAddr
+	h.log.Debugf("[Host %d] handleMetaUpdate for host %d", h.id, e.Id)
 	return
 }
 
-// updateStatus proposes node status update to deployment leader
-func (h *host) updateStatus(status uint32) (err error) {
+// getStatus returns host status
+func (h *host) getStatus() (status uint8, err error) {
+	host := h.manifest.GetHostByID(h.id)
+	if host == nil {
+		err = fmt.Errorf("Unknown host a %d", h.id)
+		return
+	}
+	status = host.Status
+	return
+}
+
+// updateStatus proposes node status update to deployment leader if necessary (idempotent)
+func (h *host) updateStatus(status uint8) (err error) {
+	currentStatus, err := h.getStatus()
+	if err != nil {
+		h.log.Errorf(err.Error())
+		return
+	}
+	if currentStatus == status {
+		return
+	}
 	e := event.HostStatusUpdate{
 		Id:     h.id,
-		Status: status,
+		Status: uint32(status),
 	}
 	msg, err := proto.Marshal(&e)
 	if err != nil {
@@ -543,15 +638,21 @@ func (h *host) updateStatus(status uint32) (err error) {
 	return
 }
 
-// handleHostStatusUpdate handles host status update events
-func (h *host) handleStatusUpdate(e event.HostStatusUpdate) (err error) {
+// handleStatusUpdate handles host status update events
+func (h *host) handleStatusUpdate(msg []byte) (err error) {
+	e := event.HostStatusUpdate{}
+	err = proto.Unmarshal(msg, &e)
+	if err != nil {
+		return
+	}
 	host := h.manifest.GetHostByID(e.Id)
 	if host == nil {
-		err = fmt.Errorf("Unknown host %d", e.Id)
+		err = fmt.Errorf("Unknown host b %d", e.Id)
 		h.log.Errorf(err.Error())
 		return
 	}
 	host.Status = uint8(e.Status)
+	h.log.Debugf("[Host %d] handleStatusUpdate for host %d: %d", h.id, e.Id, e.Status)
 	return
 }
 
@@ -569,9 +670,37 @@ func (h *host) updateEpoch(epoch uint32) (err error) {
 }
 
 // handleTick handles tick events from deployment leader
-func (h *host) handleTick(e event.Tick) (err error) {
+func (h *host) handleTick(msg []byte) (err error) {
+	e := event.Tick{}
+	proto.Unmarshal(msg, &e)
 	h.manifest.Epoch = e.Epoch
-	// Notify all local clusters of epoch
+	// TODO - Notify all local clusters of epoch
+	h.log.Debugf("[Host %d] tick", h.id)
+	return
+}
+
+// updateDeploymentStatus proposes deployment status update to deployment leader
+func (h *host) updateDeploymentStatus(status uint8) (err error) {
+	e := event.DeploymentStatusUpdate{
+		Status: uint32(status),
+	}
+	msg, err := proto.Marshal(&e)
+	if err != nil {
+		return
+	}
+	_, err = h.syncPropose(h.wrapMsg(EVENT_TYPE_DEPLOYMENT_STATUS_UPDATE, msg))
+	return
+}
+
+// handleDeploymentStatusUpdate handles deployment status update events
+func (h *host) handleDeploymentStatusUpdate(msg []byte) (err error) {
+	e := event.DeploymentStatusUpdate{}
+	err = proto.Unmarshal(msg, &e)
+	if err != nil {
+		return
+	}
+	h.manifest.Status = uint8(e.Status)
+	h.log.Debugf("[Host %d] handleDeploymentStatusUpdate: %d", h.id, e.Status)
 	return
 }
 
@@ -583,7 +712,7 @@ func (h *host) Lookup(interface{}) (res interface{}, err error) {
 
 // SaveSnapshot satisfies statemachine.IStateMachine
 func (h *host) SaveSnapshot(w io.Writer, c dbsm.ISnapshotFileCollection, d <-chan struct{}) (err error) {
-	w.Write(h.manifest.ToJson())
+	_, err = w.Write(h.manifest.ToJson())
 	h.log.Debugf("SaveSnapshot")
 	return
 }
@@ -613,38 +742,47 @@ func (h *host) Stop() {
 
 // Build initial manifest if none exists upon cluster bootstrap
 func (h *host) initializeManifest() (err error) {
-	if h.manifest.Catalog.Version != "" {
+	if h.manifest.Version > 0 {
 		return
 	}
-	var hosts = make([]entity.Host, len(h.cfg.Join))
-	for i, join := range h.cfg.Join {
+	ctx, _ := context.WithTimeout(context.Background(), raftTimeout)
+	membership, err := h.nodeHost.SyncGetClusterMembership(ctx, metaClusterID)
+	if err != nil {
+		return
+	}
+	var hosts []entity.Host
+	for id, raftAddr := range membership.Nodes {
 		var host = entity.Host{
-			ID:       join.ID,
-			RaftAddr: join.RaftAddr,
+			ID:       id,
+			RaftAddr: raftAddr,
 			Status:   entity.HOST_STATUS_INITIALIZING,
 		}
-		if h.id == host.ID {
+		if h.id == id {
 			host.IntApiAddr = h.cfg.IntApiAddr
 			host.Meta = h.cfg.Meta
 		}
-		hosts[i] = host
+		hosts = append(hosts, host)
 	}
-	h.manifest = &entity.Manifest{
+	manifest := &entity.Manifest{
 		Version:      1,
 		DeploymentID: h.cfg.DeploymentID,
 		Status:       entity.DEPLOYMENT_STATUS_INITIALIZING,
 		Catalog: entity.Catalog{
 			Version:      "1.0.0",
+			KeyLength:    uint8(h.cfg.KeyLength),
+			Partitions:   h.cfg.Partitions,
 			ReplicaCount: h.cfg.ReplicaCount,
 			WitnessCount: h.cfg.WitnessCount,
 			Hosts:        hosts,
+			Vary:         h.cfg.Vary,
 		},
 	}
-	_, err = h.syncPropose(h.wrapMsg(EVENT_TYPE_INIT, h.manifest.ToJson()))
+	_, err = h.syncPropose(h.wrapMsg(EVENT_TYPE_INIT, manifest.ToJson()))
 	if err != nil {
 		h.log.Errorf("Error proposing initial manifest: %s", err.Error())
 		return
 	}
+	h.manifest = manifest
 	h.log.Debugf("%d Manifest Initialized", h.id)
 
 	return nil

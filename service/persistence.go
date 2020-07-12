@@ -26,8 +26,8 @@ type Persistence interface {
 type persistence struct {
 	log           log.Logger
 	clock         clock.Clock
-	partitions    map[uint64]repo.Hash
-	repos         map[uint64]repo.Hash
+	partitions    map[uint16]repo.Hash
+	repos         map[uint16]repo.Hash
 	repoFactory   repo.FactoryHash
 	repoCfg       *config.RepoHash
 	keyExp        time.Duration
@@ -41,8 +41,8 @@ func NewPersistence(cfg *config.App, log log.Logger, rf repo.FactoryHash) (r *pe
 	return &persistence{
 		log:           log,
 		clock:         clock.New(),
-		partitions:    map[uint64]repo.Hash{},
-		repos:         map[uint64]repo.Hash{},
+		partitions:    map[uint16]repo.Hash{},
+		repos:         map[uint16]repo.Hash{},
 		repoFactory:   rf,
 		repoCfg:       cfg.Repo.Hash,
 		keyExp:        cfg.Repo.Hash.KeyExpiration,
@@ -88,7 +88,7 @@ func (c *persistence) Lock(batch entity.Batch) (res []uint8, err error) {
 
 	for k, batch := range batch.Partitioned() {
 		wg.Add(1)
-		go func(k uint64, batch entity.Batch) {
+		go func(k uint16, batch entity.Batch) {
 			hashRepo, ok := c.partitions[k]
 			if !ok {
 				err = fmt.Errorf("Partition not found %d", k)
@@ -128,7 +128,7 @@ func (c *persistence) Rollback(batch entity.Batch) (res []uint8, err error) {
 
 	for k, batch := range batch.Partitioned() {
 		wg.Add(1)
-		go func(k uint64, batch entity.Batch) {
+		go func(k uint16, batch entity.Batch) {
 			hashRepo, ok := c.partitions[k]
 			if !ok {
 				err = fmt.Errorf("Partition not found %d", k)
@@ -172,7 +172,7 @@ func (c *persistence) Commit(batch entity.Batch) (res []uint8, err error) {
 
 	for k, batch := range batch.Partitioned() {
 		wg.Add(1)
-		go func(k uint64, batch entity.Batch) {
+		go func(k uint16, batch entity.Batch) {
 			hashRepo, ok := c.partitions[k]
 			if !ok {
 				err = fmt.Errorf("Partition not found %d", k)

@@ -11,7 +11,7 @@ import (
 	"highvolume.io/shackle/repo"
 )
 
-func RepoFactoryhash(cfg *config.RepoHash, id uint64) (r repo.Hash, err error) {
+func RepoFactoryhash(cfg *config.RepoHash, id uint16) (r repo.Hash, err error) {
 	if cfg.PathIndex == "error" {
 		err = fmt.Errorf("error")
 		return

@@ -42,6 +42,7 @@ type Host struct {
 	RaftSolo     bool       `yaml:"raft_solo"`
 	Meta         HostMeta   `yaml:"meta"`
 	Join         []HostJoin `yaml:"join"`
+	Vary         []string   `yaml:"vary"`
 }
 
 type Log struct {
@@ -70,6 +71,5 @@ type RepoHash struct {
 	KeyExpiration  time.Duration `yaml:"key_expiration"`
 	LockExpiration time.Duration `yaml:"lock_expiration"`
 	PathIndex      string        `yaml:"path_ix"`
-	PathTimeseries string        `yaml:"path_ts"`
 	SweepInterval  time.Duration `yaml:"sweep_interval"`
 }

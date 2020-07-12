@@ -27,7 +27,7 @@ var (
 )
 
 // FactoryHash is a factory that returns a hash repository
-type FactoryHash func(cfg *config.RepoHash, id uint64) (r Hash, err error)
+type FactoryHash func(cfg *config.RepoHash, id uint16) (r Hash, err error)
 
 // Hash is a primary hash repository
 type Hash interface {
@@ -51,16 +51,13 @@ type hash struct {
 }
 
 // NewHash returns a hash respository
-func NewHash(cfg *config.RepoHash, id uint64) (r Hash, err error) {
+func NewHash(cfg *config.RepoHash, id uint16) (r Hash, err error) {
 	var (
 		ixenv     *lmdb.Env
 		ixdbi     lmdb.DBI
 		ixmetadbi lmdb.DBI
 	)
 	if _, err = os.Stat(cfg.PathIndex); os.IsNotExist(err) {
-		return
-	}
-	if _, err = os.Stat(cfg.PathTimeseries); os.IsNotExist(err) {
 		return
 	}
 	var mkdb = func(path string, envopt, dbopt int) (env *lmdb.Env, db lmdb.DBI, meta lmdb.DBI, err error) {
@@ -70,7 +67,7 @@ func NewHash(cfg *config.RepoHash, id uint64) (r Hash, err error) {
 		}
 		env, err = lmdb.NewEnv()
 		env.SetMaxDBs(2)
-		env.SetMapSize(int64(1 << 40))
+		env.SetMapSize(int64(1 << 39))
 		env.Open(path, uint(envopt), 0777)
 		err = env.Update(func(txn *lmdb.Txn) (err error) {
 			name := fmt.Sprintf("index")
@@ -83,7 +80,7 @@ func NewHash(cfg *config.RepoHash, id uint64) (r Hash, err error) {
 		})
 		return
 	}
-	ixpath := fmt.Sprintf("%s/%08x.ix.lmdb", cfg.PathIndex, id)
+	ixpath := fmt.Sprintf("%s/%04x.ix.lmdb", cfg.PathIndex, id)
 	ixenv, ixdbi, ixmetadbi, err = mkdb(ixpath, lmdbixenvopt, lmdbixdbiopt)
 	if err != nil {
 		return
