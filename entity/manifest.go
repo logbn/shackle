@@ -265,7 +265,7 @@ func (m *Manifest) Allocate() (cat *Catalog, err error) {
 				ID:        uint64(n + 1),
 				Status:    NODE_STATUS_STAGING,
 				HostID:    cat.Hosts[n2%hostCount].ID,
-				ClusterID: uint64(i+1),
+				ClusterID: uint64(i + 1),
 				Partition: uint16(i << (16 - bits)),
 				IsLeader:  j == 0,
 			})

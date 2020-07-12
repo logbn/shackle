@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 	"net/http"
+	"math/rand"
 
 	"github.com/google/uuid"
 	"github.com/segmentio/encoding/json"
@@ -25,6 +26,7 @@ func main() {
 		keepAlive  = fs.Bool("k", false, "Keepalive")
 		maxConn    = fs.Int("con", 10000, "Max open idle connections per target host")
 		maxWorkers = fs.Int("w", 8, "Max workers")
+		pctlocks   = fs.Int("pctlocks", 0, "Percent Locks (max 100)")
 	)
 	err := fs.Parse(os.Args[1:])
 	if err != nil {
@@ -44,6 +46,12 @@ func main() {
 		fail = true
 		fmt.Printf("Invalid argument for batch size: %d\n", *batchSize)
 	}
+	if *pctlocks < 0 {
+		*pctlocks = 0
+	}
+	if *pctlocks > 100 {
+		*pctlocks = 100
+	}
 	if fail {
 		return
 	}
@@ -53,7 +61,7 @@ func main() {
 	}
 
 	rate := vegeta.Rate{Freq: *rps, Per: time.Second}
-	targeter := newTargeter(*batchSize, vegeta.Target{
+	targeter := newTargeter(*batchSize, *pctlocks, vegeta.Target{
 		Method: "POST",
 		URL:    strings.Trim(*url, "/"),
 		Header: http.Header{
@@ -78,24 +86,46 @@ func main() {
 		}
 	}()
 
+	stats := map[int]int{
+		0: 0,
+		1: 0,
+		2: 0,
+		3: 0,
+		4: 0,
+		5: 0,
+		6: 0,
+	}
+
+	var r []int
 	var metrics vegeta.Metrics
 	for res := range attacker.Attack(targeter, rate, *duration, "asdf") {
 		metrics.Add(res)
+		json.Unmarshal(res.Body, &r)
+		for _, i := range r {
+			stats[i]++
+		}
 	}
 	metrics.Close()
 
 	metrics_json, _ := json.MarshalIndent(metrics, "", "\t")
 	fmt.Printf("%s\n", metrics_json)
+	stats_json, _ := json.MarshalIndent(stats, "", "\t")
+	fmt.Printf("%s\n", stats_json)
 
 	close(stop)
 }
 
-func newTargeter(batchSize int, target vegeta.Target) vegeta.Targeter {
+func newTargeter(batchSize, pctlocks int, target vegeta.Target) vegeta.Targeter {
 	return func(tgt *vegeta.Target) error {
 		if tgt == nil {
 			return vegeta.ErrNilTarget
 		}
 		*tgt = target
+		if rand.Intn(100) < pctlocks {
+			tgt.URL = tgt.URL + "/lock"
+		} else {
+			tgt.URL = tgt.URL + "/commit"
+		}
 		batch := make([]string, batchSize)
 		for i := range batch {
 			batch[i] = uuid.New().String()

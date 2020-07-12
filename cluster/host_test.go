@@ -25,11 +25,11 @@ func TestHost(t *testing.T) {
 	t.Run("New", func(t *testing.T) {
 		h, err = NewHost(
 			config.Host{
-				ID:        1,
+				ID:           1,
 				DeploymentID: 1,
-				KeyLength: 16,
-				RaftAddr: "127.0.0.1:1001",
-				RaftDir: "/tmp",
+				KeyLength:    16,
+				RaftAddr:     "127.0.0.1:1001",
+				RaftDir:      "/tmp",
 			},
 			logger,
 			svcHash,

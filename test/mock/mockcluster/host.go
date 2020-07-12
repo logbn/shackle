@@ -34,4 +34,4 @@ func (n *Host) Active() (c chan bool) {
 
 func (n *Host) PlanDelegation(batch entity.Batch) (plan entity.BatchPlan, err error) { return }
 
-func (n *Host) GetInitChan() chan entity.Catalog        { return make(chan entity.Catalog) }
+func (n *Host) GetInitChan() chan entity.Catalog { return make(chan entity.Catalog) }

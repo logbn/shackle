@@ -1,14 +1,14 @@
 package cluster
 
 import (
+	"context"
 	"fmt"
 	"io"
+	"io/ioutil"
+	"math"
 	"reflect"
 	"sync"
-	"context"
-	"math"
 	"time"
-	"io/ioutil"
 
 	"github.com/benbjohnson/clock"
 	"github.com/golang/protobuf/proto"
@@ -30,19 +30,19 @@ import (
 const (
 	EVENT_SCHEMA_VERSION uint8 = 0
 
-	EVENT_TYPE_NULL               uint8 = 0
-	EVENT_TYPE_INIT               uint8 = 1
-	EVENT_TYPE_TICK               uint8 = 2
-	EVENT_TYPE_HOST_META_UPDATE   uint8 = 3
-	EVENT_TYPE_HOST_STATUS_UPDATE uint8 = 4
-	EVENT_TYPE_ALLOCATE           uint8 = 5
+	EVENT_TYPE_NULL                     uint8 = 0
+	EVENT_TYPE_INIT                     uint8 = 1
+	EVENT_TYPE_TICK                     uint8 = 2
+	EVENT_TYPE_HOST_META_UPDATE         uint8 = 3
+	EVENT_TYPE_HOST_STATUS_UPDATE       uint8 = 4
+	EVENT_TYPE_ALLOCATE                 uint8 = 5
 	EVENT_TYPE_DEPLOYMENT_STATUS_UPDATE uint8 = 6
 
 	EVENT_RESPONSE_FAILURE uint64 = 0
 	EVENT_RESPONSE_SUCCESS uint64 = 1
 
-	metaClusterID = math.MaxUint64
-	raftTimeout = 5 * time.Second
+	metaClusterID   = math.MaxUint64
+	raftTimeout     = 5 * time.Second
 	rttMilliseconds = 200
 )
 
@@ -125,8 +125,8 @@ func NewHost(
 		h.nodeID = nodeID
 		return h
 	}
-	// level := dblog.WARNING
-	level := dblog.INFO
+	level := dblog.WARNING
+	// level := dblog.INFO
 	dblog.GetLogger("dragonboat").SetLevel(level)
 	dblog.GetLogger("transport").SetLevel(level)
 	dblog.GetLogger("logdb").SetLevel(level)
@@ -191,6 +191,7 @@ func (h *host) LeaderUpdated(info dbio.LeaderInfo) {
 		if err != nil {
 			h.log.Errorf(err.Error())
 		}
+		h.leaderID = info.LeaderID
 		if status == entity.HOST_STATUS_ACTIVE {
 			err = h.svcPersistence.Init(h.manifest.Catalog, h.id)
 			if err != nil {
@@ -202,7 +203,6 @@ func (h *host) LeaderUpdated(info dbio.LeaderInfo) {
 		} else {
 			h.starting = true
 		}
-		h.leaderID = info.LeaderID
 	}
 }
 
@@ -263,7 +263,7 @@ func (h *host) init() {
 		}
 		// Stop if any nodes have not yet reported meta
 		for _, host := range h.manifest.Catalog.Hosts {
-			if !host.Allocated(){
+			if !host.Allocated() {
 				h.log.Errorf("[Host %d] Waiting for host %d to allocate", h.id, host.ID)
 				return
 			}
@@ -287,7 +287,7 @@ func (h *host) init() {
 				}
 			}
 			if inactive > 0 {
-				h.log.Errorf("[Host %d] Waiting %d nodes to activate", h.id, inactive)
+				h.log.Errorf("[Host %d] Waiting for %d nodes to activate", h.id, inactive)
 			}
 		}
 	}
@@ -305,26 +305,26 @@ func (h *host) init() {
 
 func (h *host) startNodes(init bool) (err error) {
 	for _, nodeManifest := range h.manifest.Catalog.Nodes {
-		var n *node
 		if nodeManifest.HostID != h.id {
 			continue
 		}
-		peers := h.manifest.GetPartitionPeers(nodeManifest.Partition)
-		if _, ok := peers[h.id]; !ok {
-			continue
+		var peers = make(map[uint64]string)
+		if init {
+			peers = h.manifest.GetPartitionPeers(nodeManifest.Partition)
 		}
-		n, err = NewNode(h.cfg, h.log, h.svcHash, h.svcPersistence)
+		n, err := NewNode(h.cfg, h.log, h.svcHash, h.svcPersistence, nodeManifest.Partition)
 		if err != nil {
 			h.log.Errorf(err.Error())
-			return
+			return err
 		}
 		var factory = func(clusterID uint64, nodeID uint64) dbsm.IOnDiskStateMachine {
 			n.ClusterID = clusterID
 			n.ID = nodeID
 			return n
 		}
-		h.nodeHost.StartOnDiskCluster(peers, !(nodeManifest.IsLeader && init), factory, dbconf.Config{
-			NodeID:             nodeManifest.ID,
+		// println(len(peers), !(nodeManifest.IsLeader && init))
+		err = h.nodeHost.StartOnDiskCluster(peers, !init, factory, dbconf.Config{
+			NodeID:             h.id,
 			ClusterID:          uint64(nodeManifest.ClusterID),
 			ElectionRTT:        10,
 			HeartbeatRTT:       1,
@@ -332,6 +332,10 @@ func (h *host) startNodes(init bool) (err error) {
 			SnapshotEntries:    10,
 			CompactionOverhead: 5,
 		})
+		if err != nil {
+			h.log.Errorf(err.Error())
+			return err
+		}
 		h.nodes[nodeManifest.ID] = n
 	}
 	return
@@ -340,7 +344,11 @@ func (h *host) startNodes(init bool) (err error) {
 // Update satisfies statemachine.IStateMachine
 // It receives protocol buffer messages and propagates them to handlers.
 //
-//    IF THIS METHOD RETURNS AN ERROR, DRAGONBOAT WILL PANIC.
+//
+//
+//       IF THIS METHOD RETURNS AN ERROR, DRAGONBOAT WILL PANIC.
+//
+//
 //
 func (h *host) Update(msg []byte) (reply dbsm.Result, err error) {
 	if len(msg) < 2 {
@@ -353,7 +361,7 @@ func (h *host) Update(msg []byte) (reply dbsm.Result, err error) {
 		if h.manifest.Catalog.Version == "" {
 			h.manifest.FromJson(msg[2:])
 		} else {
-			h.log.Debugf("Ignoring duplicate manifest initialization")
+			h.log.Warnf("Ignoring duplicate manifest initialization")
 		}
 	case EVENT_TYPE_TICK:
 		err = h.handleTick(msg[2:])
@@ -393,6 +401,7 @@ func (h *host) allocate(data []byte) (err error) {
 		err = h.updateStatus(entity.HOST_STATUS_ALLOCATED)
 		if err != nil {
 			h.log.Debugf("[Host %d] Error updating status %s", h.id, err.Error())
+			err = h.updateStatus(entity.HOST_STATUS_ALLOCATED)
 		}
 	}()
 	return
@@ -402,10 +411,10 @@ func (h *host) wrapMsg(etype uint8, msg []byte) []byte {
 	return append([]byte{EVENT_SCHEMA_VERSION, etype}, msg...)
 }
 
-func (h *host) getSession() (ctx context.Context, sess *dbclient.Session, err error) {
+func (h *host) getSession(clusterID uint64) (ctx context.Context, sess *dbclient.Session, err error) {
 	ctx, _ = context.WithTimeout(context.Background(), raftTimeout)
 	ctx2, _ := context.WithTimeout(context.Background(), raftTimeout)
-	sess, err = h.nodeHost.SyncGetSession(ctx2, metaClusterID)
+	sess, err = h.nodeHost.SyncGetSession(ctx2, clusterID)
 	if err != nil {
 		err = fmt.Errorf("Error getting meta session: %s", err.Error())
 		return
@@ -416,12 +425,20 @@ func (h *host) getSession() (ctx context.Context, sess *dbclient.Session, err er
 // Convenience method that wraps SyncPropose w/ session acquisition
 // May be overkill. Have to study expected dragonboat session management.
 func (h *host) syncPropose(msg []byte) (res dbsm.Result, err error) {
-	ctx, sess, err := h.getSession()
+	ctx, sess, err := h.getSession(metaClusterID)
 	if err != nil {
 		return
 	}
 	res, err = h.nodeHost.SyncPropose(ctx, sess, msg)
 	sess.ProposalCompleted()
+	return
+}
+
+// Convenience method that wraps SyncPropose w/ session acquisition
+func (h *host) syncProposeNode(clusterID uint64, msg []byte) (res dbsm.Result, err error) {
+	ctx, _ := context.WithTimeout(context.Background(), raftTimeout)
+	sess := h.nodeHost.GetNoOPSession(clusterID)
+	res, err = h.nodeHost.SyncPropose(ctx, sess, msg)
 	return
 }
 
@@ -730,14 +747,18 @@ func (h *host) handleLocalBatch(op uint8, batch entity.Batch) (res []uint8, err 
 				h.log.Errorf("Unrecognized node (%d) %d", nodeID, len(h.nodes))
 				return
 			}
-			res2, err2 := node.HandleBatch(uint8(op), batch)
+			res2, err2 := h.syncProposeNode(node.GetClusterID(), batch.ToBytes(op))
 			if err2 != nil {
 				err = err2
 				h.log.Errorf(err.Error())
 				return
 			}
+			if len(res2.Data) < len(batch) {
+				h.log.Errorf("Incorrect batch response length: %d != %d", len(res2.Data), len(batch))
+				return
+			}
 			for i, item := range batch {
-				res[item.N] = byte(res2[i])
+				res[item.N] = byte(res2.Data[i])
 			}
 		}(nodeID, batch)
 	}

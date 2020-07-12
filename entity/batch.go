@@ -34,8 +34,8 @@ var batchParserPool = sync.Pool{New: func() interface{} { return new(fastjson.Pa
 type Batch []BatchItem
 type BatchItem struct {
 	N         int
-	Partition uint16
 	Hash      []byte
+	Partition uint16
 }
 
 // Partitioned splits a batch into a map of sub-batches keyed by partition prefix
@@ -57,6 +57,39 @@ func (b Batch) PartitionIndexed(partitionCount int) (batches map[int]Batch) {
 		partitionIndex = int(item.Partition >> (64 - bits))
 		batches[partitionIndex] = append(batches[partitionIndex], item)
 		batches[partitionIndex][len(batches[partitionIndex])-1].N = i
+	}
+	return
+}
+
+// ToBytes marshals a batch to bytes
+func (b Batch) ToBytes(op uint8) (res []byte) {
+	if len(b) < 1 {
+		return
+	}
+	stride := len(b[0].Hash)
+	res = make([]byte, len(b)*stride+1)
+	res[0] = byte(op)
+	for i := 0; i < len(b); i++ {
+		copy(res[i*stride+1:(i+1)*stride+1], b[i].Hash)
+	}
+	return
+}
+
+// FromBytes unmarshals a batch from bytes
+func BatchFromBytes(bytes []byte, stride int, h hasher) (b Batch, err error) {
+	if len(bytes) < 1 {
+		return
+	}
+	if len(bytes)%stride != 0 {
+		err = fmt.Errorf("Input length is not a multiple of stride")
+		return
+	}
+	var n = len(bytes) / stride
+	var hash []byte
+	b = make(Batch, n)
+	for i := 0; i < n; i++ {
+		hash = bytes[i*stride : (i+1)*stride]
+		b[i] = BatchItem{i, hash, h.GetPartition(hash)}
 	}
 	return
 }
@@ -101,7 +134,7 @@ func BatchFromJson(body, bucket []byte, h hasher) (ent Batch, err error) {
 	var partition uint16
 	for i, sv := range values {
 		hash, partition = h.Hash(sv.GetStringBytes(), bucket)
-		ent[i] = BatchItem{i, partition, hash}
+		ent[i] = BatchItem{i, hash, partition}
 	}
 	return
 }

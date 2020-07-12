@@ -22,9 +22,9 @@ repo:
     key_expiration: 730h
     lock_expiration: 10s
     sweep_interval: 10s
-    path_ix: /data/node3
+    path_ix: /data-nvme/node3
     disks:
-      - path: /data/node3
+      - path: /data-nvme/node3
         capacity: 8
 
 monitor:
@@ -38,7 +38,7 @@ host:
   id: 3
   deployment_id: 1
   keylength: 16
-  partitions: 64
+  partitions: 16
   pepper: sriracha
   replica_count: 2
   witness_count: 1

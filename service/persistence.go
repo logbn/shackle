@@ -15,6 +15,7 @@ import (
 
 type Persistence interface {
 	Init(cat entity.Catalog, nodeID uint64) error
+	InitRepo(partition uint16) (err error)
 	Lock(batch entity.Batch) (res []uint8, err error)
 	Rollback(batch entity.Batch) (res []uint8, err error)
 	Commit(batch entity.Batch) (res []uint8, err error)
@@ -68,6 +69,18 @@ func (c *persistence) Init(cat entity.Catalog, hostID uint64) (err error) {
 		c.repos[clusterID] = hashRepo
 		c.partitions[clusterID] = hashRepo
 	}
+	return
+}
+
+func (c *persistence) InitRepo(partition uint16) (err error) {
+	hashRepo, err := c.repoFactory(c.repoCfg, partition)
+	if err != nil {
+		return
+	}
+	c.repoMutex.Lock()
+	defer c.repoMutex.Unlock()
+	c.repos[partition] = hashRepo
+	c.partitions[partition] = hashRepo
 	return
 }
 
