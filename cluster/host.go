@@ -60,7 +60,6 @@ type Host interface {
 	Commit(entity.Batch) ([]uint8, error)
 	Rollback(entity.Batch) ([]uint8, error)
 
-	GetInitChan() chan entity.Catalog
 	PlanDelegation(batch entity.Batch) (plan entity.BatchPlan, err error)
 	Start() error
 	Stop()
@@ -81,7 +80,6 @@ type host struct {
 	svcHash        service.Hash
 	svcPersistence service.Persistence
 	svcDelegation  service.Delegation
-	initChan       chan entity.Catalog
 	active         bool
 	starting       bool
 	keylen         int
@@ -97,7 +95,6 @@ func NewHost(
 	svcHash service.Hash,
 	svcPersistence service.Persistence,
 	svcDelegation service.Delegation,
-	initChan chan entity.Catalog,
 ) (h *host, err error) {
 	if len(cfg.RaftAddr) < 1 {
 		err = fmt.Errorf("Host Address required")
@@ -119,7 +116,6 @@ func NewHost(
 		svcHash:        svcHash,
 		svcPersistence: svcPersistence,
 		svcDelegation:  svcDelegation,
-		initChan:       make(chan entity.Catalog),
 		keylen:         cfg.KeyLength,
 		clock:          clock.NewMock(),
 		nodes:          make(map[uint64]Node),
@@ -179,193 +175,9 @@ func (h *host) Start() (err error) {
 	return
 }
 
-// Lock locks a batch for processing
-func (h *host) Lock(batch entity.Batch) (res []uint8, err error) {
-	return h.handleBatch(entity.OP_LOCK, batch)
-}
-
-// Commit commits a previously locked batch
-func (h *host) Commit(batch entity.Batch) (res []uint8, err error) {
-	return h.handleBatch(entity.OP_COMMIT, batch)
-}
-
-// Rollback rolls back a previously locked batch
-func (h *host) Rollback(batch entity.Batch) (res []uint8, err error) {
-	return h.handleBatch(entity.OP_ROLLBACK, batch)
-}
-
-// handleLocalBatch delegates batches to remote hosts and local nodes
-func (h *host) handleBatch(op uint8, batch entity.Batch) (res []uint8, err error) {
-	if !h.active {
-		err = fmt.Errorf("Starting up")
-		return
-	}
-	var wg sync.WaitGroup
-	var mutex sync.RWMutex
-	var processed int
-	var delegationPlan entity.BatchPlan
-	delegationPlan, err = h.PlanDelegation(batch)
-	if err != nil {
-		h.log.Errorf(err.Error())
-		return
-	}
-	res = make([]uint8, len(batch))
-	for hostID, planSegment := range delegationPlan {
-		if hostID == h.id {
-			continue
-		}
-		wg.Add(1)
-		go func(addr string, batch entity.Batch) {
-			// Delegate
-			delResp, err := h.svcDelegation.Delegate(op, addr, batch)
-			if err != nil {
-				h.log.Errorf(err.Error())
-			}
-			// Mark result
-			mutex.Lock()
-			defer mutex.Unlock()
-			for i, item := range batch {
-				res[item.N] = delResp[i]
-				processed++
-			}
-			wg.Done()
-		}(planSegment.NodeAddr, planSegment.Batch)
-	}
-	if _, ok := delegationPlan[h.id]; ok {
-		// Persist
-		locResp, err := h.handleLocalBatch(op, delegationPlan[h.id].Batch)
-		if err != nil {
-			h.log.Errorf(err.Error())
-		}
-		// Mark result
-		mutex.Lock()
-		for i, item := range delegationPlan[h.id].Batch {
-			res[item.N] = locResp[i]
-			processed++
-		}
-		mutex.Unlock()
-	}
-	wg.Wait()
-	if processed < len(batch) {
-		err = fmt.Errorf("Only processed %d out of %d items", processed, len(batch))
-	}
-	return
-}
-
-// Receives GRPC call for delegation
-func (h *host) Delegate(ctx context.Context, req *grpcint.BatchOp) (reply *grpcint.BatchReply, err error) {
-	if !h.active {
-		err = fmt.Errorf("Starting up")
-		return
-	}
-	var batch = make(entity.Batch, len(req.Items)/h.keylen)
-	var hash []byte
-	for i := 0; i < len(batch); i++ {
-		hash = req.Items[i*h.keylen : i*h.keylen+h.keylen]
-		batch[i] = entity.BatchItem{
-			N:         i,
-			Hash:      hash,
-			Partition: h.svcHash.GetPartition(hash),
-		}
-	}
-	res, err := h.handleLocalBatch(uint8(req.Op), batch)
-	if err != nil {
-		h.log.Errorf(err.Error())
-		return
-	}
-	reply = &grpcint.BatchReply{}
-	reply.Res = make([]byte, len(batch))
-	for i := range res {
-		reply.Res[i] = byte(res[i])
-	}
-	return
-}
-
-// handleLocalBatch distributes batches to local nodes
-func (h *host) handleLocalBatch(op uint8, batch entity.Batch) (res []uint8, err error) {
-	var batches = map[uint64]entity.Batch{}
-	var node *entity.Node
-	var p []byte
-	for _, item := range batch {
-		node = h.manifest.Catalog.GetLocalNodeByPartition(item.Partition, h.id)
-		if node == nil {
-			err = fmt.Errorf("Node not found for partition: %04x", p)
-			return
-		}
-		if _, ok := batches[node.ID]; !ok {
-			batches[node.ID] = entity.Batch{}
-		}
-		batches[node.ID] = append(batches[node.ID], item)
-	}
-	res = make([]uint8, len(batch))
-	var wg sync.WaitGroup
-	for nodeID, batch := range batches {
-		wg.Add(1)
-		go func(nodeID uint64, batch entity.Batch) {
-			defer wg.Done()
-			node, ok := h.nodes[nodeID]
-			if !ok {
-				h.log.Errorf("Unrecognized node (%d)", nodeID)
-				return
-			}
-			res2, err2 := node.HandleBatch(uint8(op), batch)
-			if err2 != nil {
-				err = err2
-				h.log.Errorf(err.Error())
-				return
-			}
-			for i, item := range batch {
-				res[item.N] = byte(res2[i])
-			}
-		}(nodeID, batch)
-	}
-	wg.Wait()
-	return
-}
-
-// GetInitChan returns the host's initialization channel
-func (h *host) GetInitChan() chan entity.Catalog {
-	return h.initChan
-}
-
-func containsUint64(src []uint64, tgt uint64) bool {
-	for _, i := range src {
-		if i == tgt {
-			return true
-		}
-	}
-	return false
-}
-
-// PlanDelegation returns a batch delegation plan
-// Batches are delegated to partition master nodes
-func (h *host) PlanDelegation(batch entity.Batch) (plan entity.BatchPlan, err error) {
-	plan = entity.BatchPlan{}
-	h.mutex.RLock()
-	defer h.mutex.RUnlock()
-	var hostMap = h.manifest.Catalog.GetPartitionMap()
-	for clusterID, b := range batch.Partitioned() {
-		// TODO - rotate host based on retry number
-		// TODO - rotate host based on circuit breaker failure
-		var hostID = hostMap[clusterID][0]
-		if hostID != h.id && containsUint64(hostMap[clusterID], h.id) {
-			hostID = h.id
-		}
-		if _, ok := plan[hostID]; !ok {
-			host := h.manifest.GetHostByID(hostID)
-			plan[hostID] = &entity.BatchPlanSegment{
-				NodeAddr: host.IntApiAddr,
-				Batch:    entity.Batch{},
-			}
-		}
-		plan[hostID].Batch = append(plan[hostID].Batch, b...)
-	}
-	return
-}
-
 // LeaderUpdated receives leader promotion notifications
 func (h *host) LeaderUpdated(info dbio.LeaderInfo) {
-	if h.leaderID != info.LeaderID {
+	if info.ClusterID == metaClusterID && h.leaderID != info.LeaderID {
 		rs, err := h.nodeHost.ReadIndex(metaClusterID, raftTimeout)
 		if rs != nil {
 			defer rs.Release()
@@ -380,6 +192,11 @@ func (h *host) LeaderUpdated(info dbio.LeaderInfo) {
 			h.log.Errorf(err.Error())
 		}
 		if status == entity.HOST_STATUS_ACTIVE {
+			err = h.svcPersistence.Init(h.manifest.Catalog, h.id)
+			if err != nil {
+				h.log.Errorf("[Host %d] Persistence failed initialization: %s", h.id, err.Error())
+			}
+			h.startNodes(true)
 			h.log.Infof("[Host %d] Active", h.id)
 			h.active = true
 		} else {
@@ -440,7 +257,6 @@ func (h *host) init() {
 				h.log.Errorf("[Host %d] Error proposing allocation: %s", h.id, err.Error())
 				return
 			}
-			// h.manifest.Status = entity.DEPLOYMENT_STATUS_ALLOCATING
 			return
 		} else {
 			h.log.Debugf("[Host %d] Manifest not initializing (%d)", h.id, h.manifest.Status)
@@ -454,7 +270,27 @@ func (h *host) init() {
 		}
 		h.updateDeploymentStatus(entity.DEPLOYMENT_STATUS_ACTIVE)
 	}
-	// Activate Cluster
+
+	// Activate Clusters
+	host := h.manifest.GetHostByID(h.id)
+	if host.Allocated() {
+		if len(h.nodes) == 0 {
+			err := h.startNodes(true)
+			if err != nil {
+				h.log.Errorf(err.Error())
+			}
+		} else {
+			var inactive int
+			for _, node := range h.nodes {
+				if !node.Active() {
+					inactive++
+				}
+			}
+			if inactive > 0 {
+				h.log.Errorf("[Host %d] Waiting %d nodes to activate", h.id, inactive)
+			}
+		}
+	}
 
 	// Set status to active
 	if h.manifest.Active() {
@@ -465,6 +301,40 @@ func (h *host) init() {
 			h.starting = false
 		}
 	}
+}
+
+func (h *host) startNodes(init bool) (err error) {
+	for _, nodeManifest := range h.manifest.Catalog.Nodes {
+		var n *node
+		if nodeManifest.HostID != h.id {
+			continue
+		}
+		peers := h.manifest.GetPartitionPeers(nodeManifest.Partition)
+		if _, ok := peers[h.id]; !ok {
+			continue
+		}
+		n, err = NewNode(h.cfg, h.log, h.svcHash, h.svcPersistence)
+		if err != nil {
+			h.log.Errorf(err.Error())
+			return
+		}
+		var factory = func(clusterID uint64, nodeID uint64) dbsm.IOnDiskStateMachine {
+			n.ClusterID = clusterID
+			n.ID = nodeID
+			return n
+		}
+		h.nodeHost.StartOnDiskCluster(peers, !(nodeManifest.IsLeader && init), factory, dbconf.Config{
+			NodeID:             nodeManifest.ID,
+			ClusterID:          uint64(nodeManifest.ClusterID),
+			ElectionRTT:        10,
+			HeartbeatRTT:       1,
+			CheckQuorum:        true,
+			SnapshotEntries:    10,
+			CompactionOverhead: 5,
+		})
+		h.nodes[nodeManifest.ID] = n
+	}
+	return
 }
 
 // Update satisfies statemachine.IStateMachine
@@ -728,6 +598,176 @@ func (h *host) RecoverFromSnapshot(r io.Reader, c []dbsm.SnapshotFile, d <-chan 
 	return
 }
 
+// Lock locks a batch for processing
+func (h *host) Lock(batch entity.Batch) (res []uint8, err error) {
+	return h.handleBatch(entity.OP_LOCK, batch)
+}
+
+// Commit commits a previously locked batch
+func (h *host) Commit(batch entity.Batch) (res []uint8, err error) {
+	return h.handleBatch(entity.OP_COMMIT, batch)
+}
+
+// Rollback rolls back a previously locked batch
+func (h *host) Rollback(batch entity.Batch) (res []uint8, err error) {
+	return h.handleBatch(entity.OP_ROLLBACK, batch)
+}
+
+// handleLocalBatch delegates batches to remote hosts and local nodes
+func (h *host) handleBatch(op uint8, batch entity.Batch) (res []uint8, err error) {
+	if !h.active {
+		err = fmt.Errorf("Starting up")
+		return
+	}
+	var wg sync.WaitGroup
+	var mutex sync.RWMutex
+	var processed int
+	var delegationPlan entity.BatchPlan
+	delegationPlan, err = h.PlanDelegation(batch)
+	if err != nil {
+		h.log.Errorf(err.Error())
+		return
+	}
+	res = make([]uint8, len(batch))
+	for hostID, planSegment := range delegationPlan {
+		if hostID == h.id {
+			continue
+		}
+		wg.Add(1)
+		go func(addr string, batch entity.Batch) {
+			// Delegate
+			delResp, err := h.svcDelegation.Delegate(op, addr, batch)
+			if err != nil {
+				h.log.Errorf(err.Error())
+			}
+			// Mark result
+			mutex.Lock()
+			defer mutex.Unlock()
+			for i, item := range batch {
+				res[item.N] = delResp[i]
+				processed++
+			}
+			wg.Done()
+		}(planSegment.NodeAddr, planSegment.Batch)
+	}
+	if _, ok := delegationPlan[h.id]; ok {
+		// Persist
+		locResp, err := h.handleLocalBatch(op, delegationPlan[h.id].Batch)
+		if err != nil {
+			h.log.Errorf(err.Error())
+		}
+		// Mark result
+		mutex.Lock()
+		for i, item := range delegationPlan[h.id].Batch {
+			res[item.N] = locResp[i]
+			processed++
+		}
+		mutex.Unlock()
+	}
+	wg.Wait()
+	if processed < len(batch) {
+		err = fmt.Errorf("Only processed %d out of %d items", processed, len(batch))
+	}
+	return
+}
+
+// Receives GRPC call for delegation
+func (h *host) Delegate(ctx context.Context, req *grpcint.BatchOp) (reply *grpcint.BatchReply, err error) {
+	if !h.active {
+		err = fmt.Errorf("Starting up")
+		return
+	}
+	var batch = make(entity.Batch, len(req.Items)/h.keylen)
+	var hash []byte
+	for i := 0; i < len(batch); i++ {
+		hash = req.Items[i*h.keylen : i*h.keylen+h.keylen]
+		batch[i] = entity.BatchItem{
+			N:         i,
+			Hash:      hash,
+			Partition: h.svcHash.GetPartition(hash),
+		}
+	}
+	res, err := h.handleLocalBatch(uint8(req.Op), batch)
+	if err != nil {
+		h.log.Errorf(err.Error())
+		return
+	}
+	reply = &grpcint.BatchReply{}
+	reply.Res = make([]byte, len(batch))
+	for i := range res {
+		reply.Res[i] = byte(res[i])
+	}
+	return
+}
+
+// handleLocalBatch distributes batches to local nodes
+func (h *host) handleLocalBatch(op uint8, batch entity.Batch) (res []uint8, err error) {
+	var batches = map[uint64]entity.Batch{}
+	var node *entity.Node
+	var p []byte
+	var sz int
+	for i, item := range batch {
+		node = h.manifest.Catalog.GetLocalNodeByPartition(item.Partition, h.id)
+		if node == nil {
+			err = fmt.Errorf("Node not found for partition: %04x", p)
+			return
+		}
+		if _, ok := batches[node.ID]; !ok {
+			batches[node.ID] = entity.Batch{}
+		}
+		sz = len(batches[node.ID])
+		batches[node.ID] = append(batches[node.ID], item)
+		batches[node.ID][sz].N = i
+	}
+	res = make([]uint8, len(batch))
+	var wg sync.WaitGroup
+	for nodeID, batch := range batches {
+		wg.Add(1)
+		go func(nodeID uint64, batch entity.Batch) {
+			defer wg.Done()
+			node, ok := h.nodes[nodeID]
+			if !ok {
+				h.log.Errorf("Unrecognized node (%d) %d", nodeID, len(h.nodes))
+				return
+			}
+			res2, err2 := node.HandleBatch(uint8(op), batch)
+			if err2 != nil {
+				err = err2
+				h.log.Errorf(err.Error())
+				return
+			}
+			for i, item := range batch {
+				res[item.N] = byte(res2[i])
+			}
+		}(nodeID, batch)
+	}
+	wg.Wait()
+	return
+}
+
+// PlanDelegation returns a batch delegation plan
+// Batches are delegated to partition master nodes
+func (h *host) PlanDelegation(batch entity.Batch) (plan entity.BatchPlan, err error) {
+	plan = entity.BatchPlan{}
+	h.mutex.RLock()
+	defer h.mutex.RUnlock()
+	var hostMap = h.manifest.Catalog.GetPartitionMap()
+	for clusterID, b := range batch.Partitioned() {
+		// TODO - rotate host based on retry number
+		// TODO - rotate host based on circuit breaker failure
+		var hostID = hostMap[clusterID][0]
+		if _, ok := plan[hostID]; !ok {
+			host := h.manifest.GetHostByID(hostID)
+			plan[hostID] = &entity.BatchPlanSegment{
+				NodeAddr: host.IntApiAddr,
+				Batch:    entity.Batch{},
+			}
+		}
+		plan[hostID].Batch = append(plan[hostID].Batch, b...)
+	}
+	return
+}
+
 // Close satisfies statemachine.IStateMachine
 func (h *host) Close() (err error) {
 	return
@@ -735,7 +775,6 @@ func (h *host) Close() (err error) {
 
 // Stop stops services
 func (h *host) Stop() {
-	close(h.initChan)
 	h.svcPersistence.Stop()
 	h.svcDelegation.Stop()
 }

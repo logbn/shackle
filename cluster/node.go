@@ -14,6 +14,7 @@ import (
 
 type Node interface {
 	HandleBatch(op uint8, batch entity.Batch) (res []uint8, err error)
+	Active() bool
 	Start()
 	Stop()
 
@@ -28,37 +29,34 @@ type Node interface {
 }
 
 type node struct {
-	hostID         uint64
+	ID             uint64
+	ClusterID      uint64
 	keylen         int
 	log            log.Logger
 	svcHash        service.Hash
 	svcPersistence service.Persistence
-	svcDelegation  service.Delegation
-	initChan       chan entity.Catalog
 	activeChan     chan bool
 	active         bool
 }
 
 // NewNode returns a new node
 func NewNode(
-	cfg config.App,
+	cfg config.Host,
 	log log.Logger,
 	svcHash service.Hash,
 	svcPersistence service.Persistence,
-	svcDelegation service.Delegation,
-	initChan chan entity.Catalog,
 ) (*node, error) {
-	return &node{
-		cfg.Host.ID,
-		cfg.Host.KeyLength,
+	n := &node{
+		0,
+		0,
+		cfg.KeyLength,
 		log,
 		svcHash,
 		svcPersistence,
-		svcDelegation,
-		initChan,
 		make(chan bool),
-		false,
-	}, nil
+		true,
+	}
+	return n, nil
 }
 
 func (n *node) HandleBatch(op uint8, batch entity.Batch) (res []uint8, err error) {
@@ -67,13 +65,9 @@ func (n *node) HandleBatch(op uint8, batch entity.Batch) (res []uint8, err error
 		return
 	}
 	// Persist
-	persistResp, err := n.handlePersist(op, batch)
+	res, err = n.handlePersist(op, batch)
 	if err != nil {
 		n.log.Errorf(err.Error())
-	}
-	// Mark result
-	for i, item := range batch {
-		res[item.N] = persistResp[i]
 	}
 	return
 }
@@ -94,6 +88,9 @@ func (n *node) handlePersist(op uint8, batch entity.Batch) (res []uint8, err err
 	return
 }
 
+func (n *node) Active() (bool) {
+	return n.active
+}
 func (n *node) Open(stopc <-chan struct{}) (res uint64, err error) {
 	n.log.Debugf("Open")
 	return

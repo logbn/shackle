@@ -87,6 +87,17 @@ func (m *Manifest) GetHostByRaftAddr(raftAddr string) *Host {
 	return nil
 }
 
+// GetPartitionPeers returns a map of host id to host addr for a given partition
+func (m *Manifest) GetPartitionPeers(partition uint16) (ret map[uint64]string) {
+	ret = map[uint64]string{}
+	partMap := m.Catalog.GetPartitionMap()
+	for _, id := range partMap[partition] {
+		h := m.GetHostByID(uint64(id))
+		ret[uint64(id)] = h.RaftAddr
+	}
+	return
+}
+
 // Catalog contains a complete snapshot of the current physical and logical distribution of data within the deployment.
 type Catalog struct {
 	Version      string    `json:"version"`
@@ -100,7 +111,7 @@ type Catalog struct {
 	Witnesses    []Witness `json:"witnesses"`
 
 	partitionHostMap map[uint16][]uint64
-	partitionNodeMap map[uint16]*Node
+	partitionNodeMap map[uint16]Node
 }
 
 // FromJson marshals the catalog to json
@@ -121,7 +132,7 @@ func (c *Catalog) GetPartitionMap() map[uint16][]uint64 {
 	}
 	var m = map[uint16][]uint64{}
 	for _, node := range c.Nodes {
-		m[node.ClusterID] = append(m[node.ClusterID], node.HostID)
+		m[node.Partition] = append(m[node.Partition], node.HostID)
 	}
 	c.partitionHostMap = m
 	return m
@@ -130,15 +141,15 @@ func (c *Catalog) GetPartitionMap() map[uint16][]uint64 {
 // GetLocalNodeByPartition returns the local node responsible for a partition
 func (c *Catalog) GetLocalNodeByPartition(p uint16, hostID uint64) *Node {
 	if c.partitionNodeMap == nil {
-		c.partitionNodeMap = map[uint16]*Node{}
+		c.partitionNodeMap = map[uint16]Node{}
 		for _, node := range c.Nodes {
 			if node.HostID == hostID {
-				c.partitionNodeMap[node.ClusterID] = &node
+				c.partitionNodeMap[node.Partition] = node
 			}
 		}
 	}
-	if id, ok := c.partitionNodeMap[p]; ok {
-		return id
+	if node, ok := c.partitionNodeMap[p]; ok {
+		return &node
 	}
 	return nil
 }
@@ -147,7 +158,7 @@ func (c *Catalog) GetLocalNodeByPartition(p uint16, hostID uint64) *Node {
 func (c *Catalog) GetHostPartitions(hostID uint64) (ret []uint16) {
 	for _, node := range c.Nodes {
 		if node.HostID == hostID {
-			ret = append(ret, node.ClusterID)
+			ret = append(ret, node.Partition)
 		}
 	}
 	return
@@ -183,7 +194,8 @@ type Node struct {
 	ID        uint64 `json:"id"`
 	Status    uint8  `json:"status"`
 	HostID    uint64 `json:"hostId"`
-	ClusterID uint16 `json:"clusterId"`
+	ClusterID uint64 `json:"clusterId"`
+	Partition uint16 `json:"partition"`
 	IsLeader  bool   `json:"isLeader"`
 }
 
@@ -191,7 +203,8 @@ type Witness struct {
 	ID        uint64 `json:"id"`
 	Status    uint8  `json:"status"`
 	HostID    uint64 `json:"hostId"`
-	ClusterID uint16 `json:"clusterId"`
+	ClusterID uint64 `json:"clusterId"`
+	Partition uint16 `json:"partition"`
 }
 
 // Allocate is called during deployment initialization to prescribe cluster placement.
@@ -252,7 +265,8 @@ func (m *Manifest) Allocate() (cat *Catalog, err error) {
 				ID:        uint64(n + 1),
 				Status:    NODE_STATUS_STAGING,
 				HostID:    cat.Hosts[n2%hostCount].ID,
-				ClusterID: uint16(i << (16 - bits)),
+				ClusterID: uint64(i+1),
+				Partition: uint16(i << (16 - bits)),
 				IsLeader:  j == 0,
 			})
 			if j == 0 {
@@ -266,7 +280,8 @@ func (m *Manifest) Allocate() (cat *Catalog, err error) {
 				ID:        uint64(n + 1),
 				Status:    NODE_STATUS_STAGING,
 				HostID:    cat.Hosts[n2%hostCount].ID,
-				ClusterID: uint16(i << (16 - bits)),
+				ClusterID: uint64(i + 1),
+				Partition: uint16(i << (16 - bits)),
 			})
 			n++
 			n2++

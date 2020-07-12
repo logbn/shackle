@@ -14,7 +14,6 @@ import (
 	"highvolume.io/shackle/log"
 	"highvolume.io/shackle/repo"
 	"highvolume.io/shackle/service"
-	"highvolume.io/shackle/entity"
 )
 
 type Cluster struct {
@@ -33,9 +32,6 @@ func NewCluster(cfg config.App, log log.Logger) (*Cluster, error) {
 		return nil, fmt.Errorf("Delegation client finder misconfigured")
 	}
 
-	// Initialization channel
-	initChan := make(chan entity.Catalog)
-
 	// service.Hash
 	svcHash, err := service.NewHash(&cfg)
 	if svcHash == nil || err != nil {
@@ -53,7 +49,7 @@ func NewCluster(cfg config.App, log log.Logger) (*Cluster, error) {
 	}
 
 	// cluster.Host
-	host, err := cluster.NewHost(*cfg.Host, log, svcHash, svcPersistence, svcDelegation, initChan)
+	host, err := cluster.NewHost(*cfg.Host, log, svcHash, svcPersistence, svcDelegation)
 	if host == nil || err != nil {
 		return nil, fmt.Errorf("Host misconfigured - %s", err.Error())
 	}
