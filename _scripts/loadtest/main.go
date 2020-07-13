@@ -10,10 +10,19 @@ import (
 	"time"
 	"net/http"
 	"math/rand"
+	"sync"
 
 	"github.com/google/uuid"
 	"github.com/segmentio/encoding/json"
 	"github.com/tsenart/vegeta/lib"
+)
+
+const (
+	ITEM_ERROR = 0
+	ITEM_OPEN  = 1
+	ITEM_LOCKED= 2
+	ITEM_BUSY  = 3
+	ITEM_EXISTS= 4
 )
 
 func main() {
@@ -23,6 +32,7 @@ func main() {
 		rps        = fs.Int("r", 1, "Requests per second")
 		batchSize  = fs.Int("b", 0, "Batch Size")
 		duration   = fs.Duration("t", 0, "Time")
+		interval   = fs.Duration("intv", 10 * time.Second, "Time")
 		keepAlive  = fs.Bool("k", false, "Keepalive")
 		maxConn    = fs.Int("con", 10000, "Max open idle connections per target host")
 		maxWorkers = fs.Int("w", 8, "Max workers")
@@ -79,31 +89,64 @@ func main() {
 	stop := make(chan os.Signal)
 	signal.Notify(stop, os.Interrupt)
 	signal.Notify(stop, syscall.SIGTERM)
+	var ticker = time.NewTicker(*interval)
+	var metricsMutex sync.RWMutex
+	var stats = map[int]int{
+		ITEM_ERROR : 0,
+		ITEM_OPEN  : 0,
+		ITEM_LOCKED: 0,
+		ITEM_BUSY  : 0,
+		ITEM_EXISTS: 0,
+	}
+	var total int
+	var irate int
+	var metrics vegeta.Metrics
+	fmt.Printf("total,rate,req,success,failure,avg,p50,p95,p99,max,time\n")
 	go func() {
-		select {
-		case <-stop:
-			attacker.Stop()
+		for {
+			select {
+			case <-stop:
+				attacker.Stop()
+				return
+			case <-ticker.C:
+				metricsMutex.Lock()
+				success := stats[ITEM_LOCKED] + stats[ITEM_EXISTS]
+				failure := stats[ITEM_ERROR]
+				metrics.Close()
+				fmt.Printf("%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%v\n",
+					total,
+					irate / int(*interval / time.Second),
+					int(metrics.Rate),
+					success,
+					failure,
+					int(metrics.Latencies.Mean / time.Millisecond),
+					int(metrics.Latencies.P50 / time.Millisecond),
+					int(metrics.Latencies.P95 / time.Millisecond),
+					int(metrics.Latencies.P99 / time.Millisecond),
+					int(metrics.Latencies.Max / time.Millisecond),
+					time.Now().Format(time.RFC3339),
+				)
+				irate = 0
+				for k := range stats {
+					stats[k] = 0
+				}
+				metrics = vegeta.Metrics{}
+				metricsMutex.Unlock()
+			}
 		}
 	}()
 
-	stats := map[int]int{
-		0: 0,
-		1: 0,
-		2: 0,
-		3: 0,
-		4: 0,
-		5: 0,
-		6: 0,
-	}
-
 	var r []int
-	var metrics vegeta.Metrics
 	for res := range attacker.Attack(targeter, rate, *duration, "asdf") {
+		metricsMutex.Lock()
 		metrics.Add(res)
 		json.Unmarshal(res.Body, &r)
 		for _, i := range r {
 			stats[i]++
 		}
+		total += len(r)
+		irate += len(r)
+		metricsMutex.Unlock()
 	}
 	metrics.Close()
 
