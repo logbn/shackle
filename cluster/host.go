@@ -43,7 +43,7 @@ const (
 
 	metaClusterID   = math.MaxUint64
 	raftTimeout     = 5 * time.Second
-	rttMilliseconds = 200
+	rttMilliseconds = 10
 )
 
 // Host runs the deployment's meta cluster.
@@ -125,8 +125,8 @@ func NewHost(
 		h.nodeID = nodeID
 		return h
 	}
-	level := dblog.WARNING
-	// level := dblog.INFO
+	// level := dblog.WARNING
+	level := dblog.INFO
 	dblog.GetLogger("dragonboat").SetLevel(level)
 	dblog.GetLogger("transport").SetLevel(level)
 	dblog.GetLogger("logdb").SetLevel(level)
