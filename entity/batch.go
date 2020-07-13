@@ -18,9 +18,10 @@ const (
 	ITEM_BUSY   uint8 = 3 //  Retry after timeout     - Lock not granted
 	ITEM_EXISTS uint8 = 4 //  Do not proceed          - Lock not granted
 
-	OP_LOCK     uint8 = 0
-	OP_COMMIT   uint8 = 1
-	OP_ROLLBACK uint8 = 2
+	OP_NONE     uint8 = 0
+	OP_LOCK     uint8 = 1
+	OP_COMMIT   uint8 = 2
+	OP_ROLLBACK uint8 = 3
 )
 
 type hasher interface {

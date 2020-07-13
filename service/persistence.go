@@ -20,6 +20,7 @@ type Persistence interface {
 	Lock(batch entity.Batch) (res []uint8, err error)
 	Rollback(batch entity.Batch) (res []uint8, err error)
 	Commit(batch entity.Batch) (res []uint8, err error)
+	MultiExec(partition uint16, ops []uint8, batches []entity.Batch) (res [][]uint8, err error)
 	GetDatabases() []string
 	Start()
 	Stop()
@@ -223,6 +224,19 @@ func (c *persistence) Commit(batch entity.Batch) (res []uint8, err error) {
 	}
 	wg.Wait()
 
+	return
+}
+
+func (c *persistence) MultiExec(partition uint16, ops []uint8, batches []entity.Batch) (res [][]uint8, err error) {
+	c.repoMutex.RLock()
+	defer c.repoMutex.RUnlock()
+	hashRepo, ok := c.partitions[partition]
+	if !ok {
+		err = fmt.Errorf("Partition not found %d", partition)
+		c.log.Errorf(err.Error())
+		return
+	}
+	res, err = hashRepo.MultiExec(ops, batches)
 	return
 }
 

@@ -3,6 +3,7 @@ package cluster
 import (
 	"fmt"
 	"io"
+	"sync"
 
 	dbsm "github.com/lni/dragonboat/v3/statemachine"
 
@@ -41,6 +42,11 @@ type node struct {
 	svcPersistence service.Persistence
 	activeChan     chan bool
 	active         bool
+
+	metricMutex sync.Mutex
+	batches int
+	updates int
+	items   int
 }
 
 // NewNode returns a new node
@@ -52,16 +58,14 @@ func NewNode(
 	partition uint16,
 ) (*node, error) {
 	n := &node{
-		cfg,
-		log,
-		0,
-		0,
-		partition,
-		cfg.KeyLength,
-		svcHash,
-		svcPersistence,
-		make(chan bool),
-		true,
+		cfg: cfg,
+		log: log,
+		Partition: partition,
+		keylen: cfg.KeyLength,
+		svcHash: svcHash,
+		svcPersistence: svcPersistence,
+		activeChan: make(chan bool),
+		active: true,
 	}
 	return n, nil
 }
@@ -107,8 +111,15 @@ func (n *node) Open(stopc <-chan struct{}) (res uint64, err error) {
 	return
 }
 func (n *node) Sync() (err error) {
-	n.svcPersistence.SyncRepo(n.Partition)
-	n.log.Debugf("[Node %d] Sync %04x", n.ID, n.Partition)
+	// n.svcPersistence.SyncRepo(n.Partition)
+	n.metricMutex.Lock()
+	defer n.metricMutex.Unlock()
+	var avgBatches = float64(n.batches) / float64(n.updates)
+	var avgBatchSize = float64(n.items) / float64(n.batches)
+	n.updates = 0
+	n.batches = 0
+	n.items = 0
+	n.log.Debugf("[Node %d] Sync %04x (batches: %.2f, batchsz: %.2f)", n.ID, n.Partition, avgBatches, avgBatchSize)
 	return
 }
 func (n *node) PrepareSnapshot() (res interface{}, err error) {
@@ -116,18 +127,49 @@ func (n *node) PrepareSnapshot() (res interface{}, err error) {
 	return
 }
 func (n *node) Update(ents []dbsm.Entry) ([]dbsm.Entry, error) {
-	var batch entity.Batch
-	var err error
-	for i, e := range ents {
-		batch, err = entity.BatchFromBytes(e.Cmd[1:], n.keylen, n.svcHash)
+	var multi = true
+	n.metricMutex.Lock()
+	defer n.metricMutex.Unlock()
+	n.updates++
+	n.batches += len(ents)
+	if multi {
+		var batches = make([]entity.Batch, len(ents))
+		var ops = make([]uint8, len(ents))
+		var err error
+		for i, e := range ents {
+			if len(e.Cmd) == 0 {
+				continue
+			}
+			batches[i], err = entity.BatchFromBytes(e.Cmd[1:], n.keylen, n.svcHash)
+			if err != nil {
+				n.log.Errorf(err.Error())
+			}
+			ops[i] = e.Cmd[0]
+			n.items += len(batches[i])
+		}
+		res, err := n.svcPersistence.MultiExec(n.Partition, ops, batches)
 		if err != nil {
 			n.log.Errorf(err.Error())
+			return ents, err
 		}
-		res, err := n.handlePersist(uint8(e.Cmd[0]), batch)
-		if err != nil {
-			n.log.Errorf(err.Error())
+		for i := range res {
+			ents[i].Result = dbsm.Result{Data: res[i]}
 		}
-		ents[i].Result = dbsm.Result{Data: res}
+	} else {
+		var batch entity.Batch
+		var err error
+		for i, e := range ents {
+			batch, err = entity.BatchFromBytes(e.Cmd[1:], n.keylen, n.svcHash)
+			if err != nil {
+				n.log.Errorf(err.Error())
+			}
+			res, err := n.handlePersist(uint8(e.Cmd[0]), batch)
+			if err != nil {
+				n.log.Errorf(err.Error())
+			}
+			ents[i].Result = dbsm.Result{Data: res}
+			n.items += len(batch)
+		}
 	}
 	// n.log.Debugf("Update")
 	return ents, nil

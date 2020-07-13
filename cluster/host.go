@@ -313,8 +313,8 @@ func (h *host) startNodes(init bool) (err error) {
 			ElectionRTT:        10,
 			HeartbeatRTT:       1,
 			CheckQuorum:        true,
-			SnapshotEntries:    1000,
-			CompactionOverhead: 50,
+			SnapshotEntries:    20000,
+			CompactionOverhead: 10000,
 		})
 		if err != nil {
 			h.log.Errorf(err.Error())
