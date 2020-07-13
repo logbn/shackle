@@ -36,6 +36,7 @@ type Hash interface {
 	Commit(batch entity.Batch) (res []uint8, err error)
 	// Remove(batch entity.Batch) (res []uint8, err error)
 	// Peek(batch entity.Batch) (res []uint32, err error)
+	Sync() error
 	Close()
 }
 
@@ -236,6 +237,14 @@ func (c *hash) Commit(batch entity.Batch) (res []uint8, err error) {
 			c.cache.Add(k, tss, tss)
 		}
 	}
+	return
+}
+
+// Sync calls fsync
+func (c *hash) Sync() (err error) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	err = c.ixenv.Sync(true)
 	return
 }
 

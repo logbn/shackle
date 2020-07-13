@@ -99,12 +99,16 @@ func (n *node) Active() bool {
 	return n.active
 }
 func (n *node) Open(stopc <-chan struct{}) (res uint64, err error) {
-	n.svcPersistence.InitRepo(n.Partition)
+	err = n.svcPersistence.InitRepo(n.Partition)
+	if err != nil {
+		return
+	}
 	n.log.Debugf("[Host %d] Open %04x", n.cfg.ID, n.Partition)
 	return
 }
 func (n *node) Sync() (err error) {
-	// n.log.Debugf("Sync")
+	n.svcPersistence.SyncRepo(n.Partition)
+	n.log.Debugf("[Node %d] Sync %04x", n.ID, n.Partition)
 	return
 }
 func (n *node) PrepareSnapshot() (res interface{}, err error) {

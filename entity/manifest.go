@@ -8,8 +8,7 @@ import (
 
 const (
 	DEPLOYMENT_STATUS_INITIALIZING uint8 = 0
-	DEPLOYMENT_STATUS_ALLOCATING   uint8 = 1
-	DEPLOYMENT_STATUS_ACTIVE       uint8 = 2
+	DEPLOYMENT_STATUS_ACTIVE       uint8 = 1
 
 	HOST_STATUS_INITIALIZING uint8 = 0
 	HOST_STATUS_ALLOCATED    uint8 = 1
@@ -48,9 +47,6 @@ type Manifest struct {
 
 func (m *Manifest) Initializing() bool {
 	return m.Status == DEPLOYMENT_STATUS_INITIALIZING
-}
-func (m *Manifest) Allocating() bool {
-	return m.Status == DEPLOYMENT_STATUS_ALLOCATING
 }
 func (m *Manifest) Active() bool {
 	return m.Status == DEPLOYMENT_STATUS_ACTIVE

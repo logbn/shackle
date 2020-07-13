@@ -16,6 +16,7 @@ import (
 type Persistence interface {
 	Init(cat entity.Catalog, nodeID uint64) error
 	InitRepo(partition uint16) (err error)
+	SyncRepo(partition uint16) (err error)
 	Lock(batch entity.Batch) (res []uint8, err error)
 	Rollback(batch entity.Batch) (res []uint8, err error)
 	Commit(batch entity.Batch) (res []uint8, err error)
@@ -81,6 +82,16 @@ func (c *persistence) InitRepo(partition uint16) (err error) {
 	defer c.repoMutex.Unlock()
 	c.repos[partition] = hashRepo
 	c.partitions[partition] = hashRepo
+	return
+}
+
+func (c *persistence) SyncRepo(partition uint16) (err error) {
+	hashRepo, ok := c.partitions[partition]
+	if !ok {
+		err = fmt.Errorf("Partition not found %04x", partition)
+		return
+	}
+	err = hashRepo.Sync()
 	return
 }
 

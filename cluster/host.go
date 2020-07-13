@@ -236,7 +236,7 @@ func (h *host) init() {
 		h.log.Debugf("[Host %d] Meta Updated", h.id)
 		return
 	}
-	if h.isLeader() {
+	if h.isLeader() && h.manifest.Initializing() {
 		// Stop if any nodes have not yet reported meta
 		for _, host := range h.manifest.Catalog.Hosts {
 			if host.IntApiAddr == "" {
@@ -244,41 +244,28 @@ func (h *host) init() {
 				return
 			}
 		}
-		// Schedule allocation
-		if h.manifest.Initializing() {
-			h.log.Debugf("[Host %d] Allocating %d partitions", h.id, h.manifest.Catalog.Partitions)
-			catalog, err := h.manifest.Allocate()
-			if err != nil {
-				h.log.Errorf(err.Error())
-				return
-			}
-			_, err = h.syncPropose(h.wrapMsg(EVENT_TYPE_ALLOCATE, catalog.ToJson()))
-			if err != nil {
-				h.log.Errorf("[Host %d] Error proposing allocation: %s", h.id, err.Error())
-				return
-			}
+		h.log.Debugf("[Host %d] Allocating %d partitions", h.id, h.manifest.Catalog.Partitions)
+		catalog, err := h.manifest.Allocate()
+		if err != nil {
+			h.log.Errorf(err.Error())
 			return
-		} else {
-			h.log.Debugf("[Host %d] Manifest not initializing (%d)", h.id, h.manifest.Status)
 		}
-		// Stop if any nodes have not yet reported meta
-		for _, host := range h.manifest.Catalog.Hosts {
-			if !host.Allocated() {
-				h.log.Errorf("[Host %d] Waiting for host %d to allocate", h.id, host.ID)
-				return
-			}
+		_, err = h.syncPropose(h.wrapMsg(EVENT_TYPE_ALLOCATE, catalog.ToJson()))
+		if err != nil {
+			h.log.Errorf("[Host %d] Error proposing allocation: %s", h.id, err.Error())
+			return
 		}
 		h.updateDeploymentStatus(entity.DEPLOYMENT_STATUS_ACTIVE)
 	}
 
-	// Activate Clusters
-	host := h.manifest.GetHostByID(h.id)
-	if host.Allocated() {
+	// Set status to active
+	if h.manifest.Active() {
 		if len(h.nodes) == 0 {
 			err := h.startNodes(true)
 			if err != nil {
 				h.log.Errorf(err.Error())
 			}
+			return
 		} else {
 			var inactive int
 			for _, node := range h.nodes {
@@ -288,12 +275,9 @@ func (h *host) init() {
 			}
 			if inactive > 0 {
 				h.log.Errorf("[Host %d] Waiting for %d nodes to activate", h.id, inactive)
+				return
 			}
 		}
-	}
-
-	// Set status to active
-	if h.manifest.Active() {
 		err = h.updateStatus(entity.HOST_STATUS_ACTIVE)
 		if err == nil {
 			h.log.Infof("[Host %d] active", h.id)
@@ -329,8 +313,8 @@ func (h *host) startNodes(init bool) (err error) {
 			ElectionRTT:        10,
 			HeartbeatRTT:       1,
 			CheckQuorum:        true,
-			SnapshotEntries:    10,
-			CompactionOverhead: 5,
+			SnapshotEntries:    1000,
+			CompactionOverhead: 50,
 		})
 		if err != nil {
 			h.log.Errorf(err.Error())
@@ -389,7 +373,6 @@ func (h *host) Update(msg []byte) (reply dbsm.Result, err error) {
 // Initialize vnodes. Special operation of the persistence service.
 func (h *host) allocate(data []byte) (err error) {
 	h.log.Debugf("[Host %d] allocate called", h.id)
-	h.manifest.Status = entity.DEPLOYMENT_STATUS_ALLOCATING
 	h.manifest.Catalog.FromJson(data)
 	err = h.svcPersistence.Init(h.manifest.Catalog, h.id)
 	if err != nil {
@@ -397,13 +380,6 @@ func (h *host) allocate(data []byte) (err error) {
 		return
 	}
 	h.log.Debugf("[Host %d] Allocated", h.id)
-	go func() {
-		err = h.updateStatus(entity.HOST_STATUS_ALLOCATED)
-		if err != nil {
-			h.log.Debugf("[Host %d] Error updating status %s", h.id, err.Error())
-			err = h.updateStatus(entity.HOST_STATUS_ALLOCATED)
-		}
-	}()
 	return
 }
 
