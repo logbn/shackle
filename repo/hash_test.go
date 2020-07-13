@@ -21,14 +21,7 @@ func TestNewHash(t *testing.T) {
 	os.MkdirAll(realdir, 0777)
 	t.Run("NonExistantDatabase", func(t *testing.T) {
 		_, err := NewHash(&config.RepoHash{
-			PathIndex:      realdir,
-			PathTimeseries: fakedir,
-			CacheSize:      1000,
-		}, 1)
-		require.True(t, os.IsNotExist(err))
-		_, err = NewHash(&config.RepoHash{
 			PathIndex:      fakedir,
-			PathTimeseries: realdir,
 			CacheSize:      1000,
 		}, 2)
 		require.True(t, os.IsNotExist(err))
@@ -36,7 +29,6 @@ func TestNewHash(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		_, err := NewHash(&config.RepoHash{
 			PathIndex:      realdir,
-			PathTimeseries: realdir,
 			CacheSize:      1000,
 		}, 3)
 		require.Nil(t, err)
@@ -51,7 +43,6 @@ func TestHash(t *testing.T) {
 	os.MkdirAll(tmpdir, 0777)
 	repo, err := NewHash(&config.RepoHash{
 		PathIndex:      tmpdir,
-		PathTimeseries: tmpdir,
 		CacheSize:      1000,
 	}, 4)
 	require.Nil(t, err)
@@ -59,10 +50,10 @@ func TestHash(t *testing.T) {
 
 	t.Run("LockCommit", func(t *testing.T) {
 		items := entity.Batch{
-			entity.BatchItem{0, 0, []byte("0000000000000000")},
-			entity.BatchItem{1, 0, []byte("0000000000000001")},
-			entity.BatchItem{2, 0, []byte("0000000000000002")},
-			entity.BatchItem{3, 0, []byte("0000000000000003")},
+			entity.BatchItem{0, []byte("0000000000000000"), 0},
+			entity.BatchItem{1, []byte("0000000000000001"), 0},
+			entity.BatchItem{2, []byte("0000000000000002"), 0},
+			entity.BatchItem{3, []byte("0000000000000003"), 0},
 		}
 		// Lock Items
 		res, err := repo.Lock(items)
@@ -109,10 +100,10 @@ func TestHash(t *testing.T) {
 	})
 	t.Run("LockRollbackCommit", func(t *testing.T) {
 		items := entity.Batch{
-			entity.BatchItem{0, 0, []byte("0000000000000010")},
-			entity.BatchItem{1, 0, []byte("0000000000000011")},
-			entity.BatchItem{2, 0, []byte("0000000000000012")},
-			entity.BatchItem{3, 0, []byte("0000000000000013")},
+			entity.BatchItem{0, []byte("0000000000000010"), 0},
+			entity.BatchItem{1, []byte("0000000000000011"), 0},
+			entity.BatchItem{2, []byte("0000000000000012"), 0},
+			entity.BatchItem{3, []byte("0000000000000013"), 0},
 		}
 		// Lock Items
 		res, err := repo.Lock(items)
@@ -141,10 +132,10 @@ func TestHash(t *testing.T) {
 	//
 	t.Run("BlindCommit", func(t *testing.T) {
 		items := entity.Batch{
-			entity.BatchItem{0, 0, []byte("0000000000000020")},
-			entity.BatchItem{1, 0, []byte("0000000000000021")},
-			entity.BatchItem{2, 0, []byte("0000000000000022")},
-			entity.BatchItem{3, 0, []byte("0000000000000023")},
+			entity.BatchItem{0, []byte("0000000000000020"), 0},
+			entity.BatchItem{1, []byte("0000000000000021"), 0},
+			entity.BatchItem{2, []byte("0000000000000022"), 0},
+			entity.BatchItem{3, []byte("0000000000000023"), 0},
 		}
 		// Commit succeeeds
 		res, err := repo.Commit(items)
@@ -156,10 +147,10 @@ func TestHash(t *testing.T) {
 	})
 	t.Run("BlindRollback", func(t *testing.T) {
 		items := entity.Batch{
-			entity.BatchItem{0, 0, []byte("0000000000000030")},
-			entity.BatchItem{1, 0, []byte("0000000000000031")},
-			entity.BatchItem{2, 0, []byte("0000000000000032")},
-			entity.BatchItem{3, 0, []byte("0000000000000033")},
+			entity.BatchItem{0, []byte("0000000000000030"), 0},
+			entity.BatchItem{1, []byte("0000000000000031"), 0},
+			entity.BatchItem{2, []byte("0000000000000032"), 0},
+			entity.BatchItem{3, []byte("0000000000000033"), 0},
 		}
 		// Rollback Items
 		res, err := repo.Rollback(items)
@@ -171,10 +162,10 @@ func TestHash(t *testing.T) {
 	})
 	t.Run("LockExisting", func(t *testing.T) {
 		items := entity.Batch{
-			entity.BatchItem{0, 0, []byte("0000000000000040")},
-			entity.BatchItem{1, 0, []byte("0000000000000041")},
-			entity.BatchItem{2, 0, []byte("0000000000000042")},
-			entity.BatchItem{3, 0, []byte("0000000000000043")},
+			entity.BatchItem{0, []byte("0000000000000040"), 0},
+			entity.BatchItem{1, []byte("0000000000000041"), 0},
+			entity.BatchItem{2, []byte("0000000000000042"), 0},
+			entity.BatchItem{3, []byte("0000000000000043"), 0},
 		}
 		// Commit succeeeds
 		res, err := repo.Commit(items)
@@ -193,10 +184,10 @@ func TestHash(t *testing.T) {
 	})
 	t.Run("RollbackExisting", func(t *testing.T) {
 		items := entity.Batch{
-			entity.BatchItem{0, 0, []byte("0000000000000050")},
-			entity.BatchItem{1, 0, []byte("0000000000000051")},
-			entity.BatchItem{2, 0, []byte("0000000000000052")},
-			entity.BatchItem{3, 0, []byte("0000000000000053")},
+			entity.BatchItem{0, []byte("0000000000000050"), 0},
+			entity.BatchItem{1, []byte("0000000000000051"), 0},
+			entity.BatchItem{2, []byte("0000000000000052"), 0},
+			entity.BatchItem{3, []byte("0000000000000053"), 0},
 		}
 		// Commit succeeeds
 		res, err := repo.Commit(items)
@@ -215,10 +206,10 @@ func TestHash(t *testing.T) {
 	})
 	t.Run("Duplicates", func(t *testing.T) {
 		items := entity.Batch{
-			entity.BatchItem{0, 0, []byte("0000000000000060")},
-			entity.BatchItem{1, 0, []byte("0000000000000060")},
-			entity.BatchItem{2, 0, []byte("0000000000000060")},
-			entity.BatchItem{3, 0, []byte("0000000000000060")},
+			entity.BatchItem{0, []byte("0000000000000060"), 0},
+			entity.BatchItem{1, []byte("0000000000000060"), 0},
+			entity.BatchItem{2, []byte("0000000000000060"), 0},
+			entity.BatchItem{3, []byte("0000000000000060"), 0},
 		}
 		// Lock Items
 		res, err := repo.Lock(items)
@@ -279,7 +270,6 @@ func TestHashClose(t *testing.T) {
 	os.MkdirAll(tmpdir, 0777)
 	repo, err := NewHash(&config.RepoHash{
 		PathIndex:      tmpdir,
-		PathTimeseries: tmpdir,
 		CacheSize:      1000,
 	}, 7)
 	require.Nil(t, err)

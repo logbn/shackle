@@ -15,15 +15,15 @@ func TestRepoFactoryhash(t *testing.T) {
 	require.Nil(t, err)
 	require.NotNil(t, repo)
 	batch1 := entity.Batch{
-		entity.BatchItem{0, 0, []byte("ERROR")},
-		entity.BatchItem{1, 0, []byte("OPEN")},
-		entity.BatchItem{2, 0, []byte("LOCKED")},
-		entity.BatchItem{3, 0, []byte("BUSY")},
-		entity.BatchItem{4, 0, []byte("EXISTS")},
-		entity.BatchItem{5, 0, []byte("nonsense")},
+		entity.BatchItem{0, []byte("ERROR00000"), 0},
+		entity.BatchItem{1, []byte("OPEN000000"), 0},
+		entity.BatchItem{2, []byte("LOCKED0000"), 0},
+		entity.BatchItem{3, []byte("BUSY000000"), 0},
+		entity.BatchItem{4, []byte("EXISTS0000"), 0},
+		entity.BatchItem{5, []byte("nonsense00"), 0},
 	}
 	batch2 := append(batch1, entity.Batch{
-		entity.BatchItem{6, 0, []byte("FATAL")},
+		entity.BatchItem{6, []byte("FATAL0000"), 0},
 	}...)
 	test := func(res []uint8) {
 		assert.Equal(t, entity.ITEM_ERROR, res[0])

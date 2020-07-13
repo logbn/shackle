@@ -8,7 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"highvolume.io/shackle/config"
-	"highvolume.io/shackle/entity"
 	"highvolume.io/shackle/test/mock"
 )
 
@@ -19,22 +18,17 @@ func TestNode(t *testing.T) {
 		logger         = &mock.Logger{}
 		svcHash        = &mock.ServiceHash{}
 		svcPersistence = &mock.ServicePersistence{}
-		svcDelegation  = &mock.ServiceDelegation{}
 	)
-	initChan := make(chan entity.Catalog)
 	t.Run("New", func(t *testing.T) {
 		node, err = NewNode(
-			config.App{
-				Host: &config.Host{
-					ID:        1,
-					KeyLength: 16,
-				},
+			config.Host{
+				ID:        1,
+				KeyLength: 16,
 			},
 			logger,
 			svcHash,
 			svcPersistence,
-			svcDelegation,
-			initChan,
+			0,
 		)
 		require.Nil(t, err)
 		require.NotNil(t, node)

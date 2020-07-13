@@ -11,111 +11,104 @@ import (
 func TestManifestAllocate(t *testing.T) {
 	// Success
 	manifest := makeEmptyManifest(3, 2, 1, 64)
-	err := manifest.Allocate()
+	cat, err := manifest.Allocate()
 	require.Nil(t, err)
-	stats := calcManifestStats(manifest)
-	assert.Equal(t, 64*2, len(manifest.Catalog.Nodes))
-	assert.Equal(t, 64, len(manifest.Catalog.Witnesses))
+	stats := calcManifestStats(cat)
+	assert.Equal(t, 64*2, len(cat.Nodes))
+	assert.Equal(t, 64, len(cat.Witnesses))
 	assert.Equal(t, 0, stats.leaderlessHosts)
 	assert.Equal(t, 0, stats.emptyHosts)
 
 	manifest = makeEmptyManifest(5, 3, 2, 128)
-	err = manifest.Allocate()
+	cat, err = manifest.Allocate()
 	require.Nil(t, err)
-	stats = calcManifestStats(manifest)
-	assert.Equal(t, 128*3, len(manifest.Catalog.Nodes))
-	assert.Equal(t, 128*2, len(manifest.Catalog.Witnesses))
+	stats = calcManifestStats(cat)
+	assert.Equal(t, 128*3, len(cat.Nodes))
+	assert.Equal(t, 128*2, len(cat.Witnesses))
 	assert.Equal(t, 0, stats.leaderlessHosts)
 	assert.Equal(t, 0, stats.emptyHosts)
 
 	manifest = makeEmptyManifest(3, 3, 1, 16)
-	err = manifest.Allocate()
+	cat, err = manifest.Allocate()
 	require.Nil(t, err)
-	stats = calcManifestStats(manifest)
-	assert.Equal(t, 16*3, len(manifest.Catalog.Nodes))
-	assert.Equal(t, 0, len(manifest.Catalog.Witnesses))
+	stats = calcManifestStats(cat)
+	assert.Equal(t, 16*3, len(cat.Nodes))
+	assert.Equal(t, 0, len(cat.Witnesses))
 	assert.Equal(t, 0, stats.leaderlessHosts)
 	assert.Equal(t, 0, stats.emptyHosts)
 
 	manifest = makeEmptyManifest(3, 2, 1, 2)
-	err = manifest.Allocate()
+	cat, err = manifest.Allocate()
 	require.Nil(t, err)
-	stats = calcManifestStats(manifest)
-	assert.Equal(t, 4, len(manifest.Catalog.Nodes))
-	assert.Equal(t, 2, len(manifest.Catalog.Witnesses))
+	stats = calcManifestStats(cat)
+	assert.Equal(t, 4, len(cat.Nodes))
+	assert.Equal(t, 2, len(cat.Witnesses))
 	assert.Equal(t, 1, stats.leaderlessHosts)
 	assert.Equal(t, 0, stats.emptyHosts)
 
 	manifest = makeEmptyManifest(3, 2, 1, 4096)
-	err = manifest.Allocate()
+	cat, err = manifest.Allocate()
 	require.Nil(t, err)
-	stats = calcManifestStats(manifest)
-	assert.Equal(t, 4096*2, len(manifest.Catalog.Nodes))
-	assert.Equal(t, 4096, len(manifest.Catalog.Witnesses))
+	stats = calcManifestStats(cat)
+	assert.Equal(t, 4096*2, len(cat.Nodes))
+	assert.Equal(t, 4096, len(cat.Witnesses))
 	assert.Equal(t, 0, stats.leaderlessHosts)
 	assert.Equal(t, 0, stats.emptyHosts)
 
 	// Partition count not power of 2
 	manifest = makeEmptyManifest(3, 2, 1, 555)
-	err = manifest.Allocate()
+	_, err = manifest.Allocate()
 	require.NotNil(t, err)
 
 	// Hosts empty
 	manifest = makeEmptyManifest(3, 2, 1, 256)
 	manifest.Catalog.Hosts = nil
-	err = manifest.Allocate()
+	_, err = manifest.Allocate()
 	require.NotNil(t, err)
 
 	// Nodes not empty
 	manifest = makeEmptyManifest(3, 2, 1, 256)
 	manifest.Catalog.Nodes = []Node{{}, {}}
-	err = manifest.Allocate()
+	_, err = manifest.Allocate()
 	require.NotNil(t, err)
 
 	// Witnesses not empty
 	manifest = makeEmptyManifest(3, 2, 1, 256)
 	manifest.Catalog.Witnesses = []Witness{{}, {}}
-	err = manifest.Allocate()
+	_, err = manifest.Allocate()
 	require.NotNil(t, err)
 
 	// Manifest not initializing
 	manifest = makeEmptyManifest(3, 2, 1, 256)
-	manifest.Status = DEPLOYMENT_STATUS_ALLOCATING
-	err = manifest.Allocate()
+	manifest.Status = DEPLOYMENT_STATUS_ACTIVE
+	_, err = manifest.Allocate()
 	require.NotNil(t, err)
 
 	// Replicas greater than nodes
 	manifest = makeEmptyManifest(3, 5, 1, 256)
-	err = manifest.Allocate()
+	cat, err = manifest.Allocate()
 	require.Nil(t, err)
-	assert.Equal(t, 256*3, len(manifest.Catalog.Nodes))
-	assert.Equal(t, 0, len(manifest.Catalog.Witnesses))
+	assert.Equal(t, 256*3, len(cat.Nodes))
+	assert.Equal(t, 0, len(cat.Witnesses))
 
 	// To/From Json
 	manifest = makeEmptyManifest(3, 2, 1, 256)
-	err = manifest.Allocate()
-	data := manifest.ToJson()
+	cat, err = manifest.Allocate()
+	data := cat.ToJson()
 	require.NotNil(t, data)
-	assert.Greater(t, len(data), 1000)
+	assert.Greater(t, len(data), 1000, string(data))
 	manifest = makeEmptyManifest(3, 2, 1, 256)
-	err = manifest.FromJson(data)
-	// fmt.Println(string(manifest.ToJson()))
+	err = cat.FromJson(data)
 	require.Nil(t, err)
-	assert.Equal(t, 256, len(manifest.Catalog.Witnesses))
+	assert.Equal(t, 256, len(cat.Witnesses))
 }
 
 func TestManifestStatus(t *testing.T) {
 	manifest := makeEmptyManifest(3, 2, 1, 64)
 	assert.Equal(t, true, manifest.Initializing())
-	assert.Equal(t, false, manifest.Allocating())
-	assert.Equal(t, false, manifest.Active())
-	manifest.Status = DEPLOYMENT_STATUS_ALLOCATING
-	assert.Equal(t, false, manifest.Initializing())
-	assert.Equal(t, true, manifest.Allocating())
 	assert.Equal(t, false, manifest.Active())
 	manifest.Status = DEPLOYMENT_STATUS_ACTIVE
 	assert.Equal(t, false, manifest.Initializing())
-	assert.Equal(t, false, manifest.Allocating())
 	assert.Equal(t, true, manifest.Active())
 }
 
@@ -126,13 +119,11 @@ func TestManifestHostStatus(t *testing.T) {
 	host = manifest.GetHostByRaftAddr("localhost:1001")
 	require.NotNil(t, host)
 	assert.Equal(t, true, host.Initializing())
-	host.Status = HOST_STATUS_ALLOCATED
-	assert.Equal(t, true, host.Allocated())
 	host = manifest.GetHostByID(0)
 	require.Nil(t, host)
 	host = manifest.GetHostByID(1)
 	require.NotNil(t, host)
-	assert.Equal(t, true, host.Allocated())
+	assert.Equal(t, true, host.Initializing())
 	host.Status = HOST_STATUS_ACTIVE
 	assert.Equal(t, true, host.Active())
 	host.Status = HOST_STATUS_DOWN
@@ -172,16 +163,16 @@ type manifestStats struct {
 	emptyHosts      int
 }
 
-func calcManifestStats(m *Manifest) (s manifestStats) {
+func calcManifestStats(cat *Catalog) (s manifestStats) {
 	var hostLeaders = map[uint64]int{}
 	var hostsSeen = map[uint64]bool{}
-	for _, node := range m.Catalog.Nodes {
+	for _, node := range cat.Nodes {
 		hostsSeen[node.HostID] = true
 		if node.IsLeader {
 			hostLeaders[node.HostID]++
 		}
 	}
-	for _, h := range m.Catalog.Hosts {
+	for _, h := range cat.Hosts {
 		if hostLeaders[h.ID] == 0 {
 			s.leaderlessHosts++
 		}

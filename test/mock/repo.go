@@ -22,6 +22,7 @@ func RepoFactoryhash(cfg *config.RepoHash, id uint16) (r repo.Hash, err error) {
 
 type RepoHash struct {
 	Closes           int
+	Syncs            int
 	mutex            sync.Mutex
 	SweepExpiredFunc func(exp time.Time, limit int) (maxAge time.Duration, notFound, deleted int, err error)
 	SweepLockedFunc  func(exp time.Time) (total int, deleted int, err error)
@@ -36,6 +37,16 @@ func (r *RepoHash) Rollback(batch entity.Batch) (res []uint8, err error) {
 func (r *RepoHash) Commit(batch entity.Batch) (res []uint8, err error) {
 	return r.getRes(batch)
 }
+func (r *RepoHash) MultiExec(ops []uint8, batches []entity.Batch) (res [][]uint8, err error) {
+	res = make([][]uint8, len(ops))
+	for i := range ops {
+		res[i], err = r.getRes(batches[i])
+		if err != nil {
+			return
+		}
+	}
+	return
+}
 func (c *RepoHash) SweepExpired(exp time.Time, limit int) (maxAge time.Duration, notFound, deleted int, err error) {
 	if c.SweepExpiredFunc != nil {
 		return c.SweepExpiredFunc(exp, limit)
@@ -46,6 +57,12 @@ func (c *RepoHash) SweepLocked(exp time.Time) (total int, deleted int, err error
 	if c.SweepLockedFunc != nil {
 		return c.SweepLockedFunc(exp)
 	}
+	return
+}
+func (r *RepoHash) Sync() (err error) {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+	r.Syncs++
 	return
 }
 func (r *RepoHash) Close() {

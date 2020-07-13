@@ -11,7 +11,7 @@ import (
 func TestServicePersistence(t *testing.T) {
 	svc := &ServicePersistence{}
 	batch := entity.Batch{
-		entity.BatchItem{0, 0, []byte("TEST")},
+		entity.BatchItem{0, []byte("TEST"), 0},
 	}
 
 	res, err := svc.Lock(batch)

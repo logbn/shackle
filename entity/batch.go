@@ -55,7 +55,7 @@ func (b Batch) PartitionIndexed(partitionCount int) (batches map[int]Batch) {
 	var bits = int(math.Log2(float64(partitionCount)))
 	var partitionIndex int
 	for i, item := range b {
-		partitionIndex = int(item.Partition >> (64 - bits))
+		partitionIndex = int(item.Partition >> (16 - bits))
 		batches[partitionIndex] = append(batches[partitionIndex], item)
 		batches[partitionIndex][len(batches[partitionIndex])-1].N = i
 	}

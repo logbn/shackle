@@ -84,7 +84,7 @@ func BenchmarkHash(b *testing.B) {
 	var input = []byte("464d3d212056cfe5")
 	var bucket = []byte("bucket")
 	var res = make([]byte, 16)
-	var p uint64
+	var p uint16
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		res, p = svc.Hash(input, bucket)

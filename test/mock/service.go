@@ -24,6 +24,14 @@ func (m *ServicePersistence) Init(cat entity.Catalog, nodeID uint64) (err error)
 	m.incr("Init")
 	return
 }
+func (m *ServicePersistence) InitRepo(partition uint16) (err error){
+	m.incr("InitRepo")
+	return
+}
+func (m *ServicePersistence) SyncRepo(partition uint16) (err error){
+	m.incr("SyncRepo")
+	return
+}
 func (m *ServicePersistence) Lock(batch entity.Batch) (res []uint8, err error) {
 	m.incr("Lock")
 	res = make([]uint8, len(batch))
@@ -62,6 +70,24 @@ func (m *ServicePersistence) Commit(batch entity.Batch) (res []uint8, err error)
 	}
 	if len(batch) == 7 {
 		err = fmt.Errorf("test err")
+	}
+	return
+}
+func (m *ServicePersistence) MultiExec(part uint16, ops []uint8, batches []entity.Batch) (res [][]uint8, err error){
+	m.incr("MultiExec")
+	res = make([][]uint8, len(ops))
+	for i := range ops {
+		switch ops[i] {
+		case entity.OP_LOCK:
+			res[i], err = m.Lock(batches[i])
+		case entity.OP_COMMIT:
+			res[i], err = m.Commit(batches[i])
+		case entity.OP_ROLLBACK:
+			res[i], err = m.Rollback(batches[i])
+		}
+		if err != nil {
+			return
+		}
 	}
 	return
 }

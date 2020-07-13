@@ -11,10 +11,9 @@ const (
 	DEPLOYMENT_STATUS_ACTIVE       uint8 = 1
 
 	HOST_STATUS_INITIALIZING uint8 = 0
-	HOST_STATUS_ALLOCATED    uint8 = 1
-	HOST_STATUS_ACTIVE       uint8 = 2
-	HOST_STATUS_DOWN         uint8 = 3
-	HOST_STATUS_RECOVERING   uint8 = 4
+	HOST_STATUS_ACTIVE       uint8 = 1
+	HOST_STATUS_DOWN         uint8 = 2
+	HOST_STATUS_RECOVERING   uint8 = 3
 
 	NODE_STATUS_STAGING uint8 = 0
 	NODE_STATUS_ACTIVE  uint8 = 1
@@ -172,9 +171,6 @@ type Host struct {
 
 func (h *Host) Initializing() bool {
 	return h.Status == HOST_STATUS_INITIALIZING
-}
-func (h *Host) Allocated() bool {
-	return h.Status == HOST_STATUS_ALLOCATED
 }
 func (h *Host) Active() bool {
 	return h.Status == HOST_STATUS_ACTIVE

@@ -11,10 +11,10 @@ import (
 
 func TestBatchPartitioned(t *testing.T) {
 	b := Batch{
-		BatchItem{0, 0, []byte("0")},
-		BatchItem{1, 1, []byte("1")},
-		BatchItem{2, 2, []byte("2")},
-		BatchItem{3, 3, []byte("3")},
+		BatchItem{0, []byte("0"), 0},
+		BatchItem{1, []byte("1"), 1},
+		BatchItem{2, []byte("2"), 2},
+		BatchItem{3, []byte("3"), 3},
 	}
 	bp := b.Partitioned()
 	require.Len(t, bp, 4)
@@ -23,10 +23,10 @@ func TestBatchPartitioned(t *testing.T) {
 		assert.Equal(t, []byte(fmt.Sprintf("%d", b[0].N)), b[0].Hash)
 	}
 	b = Batch{
-		BatchItem{0, 0, []byte("0")},
-		BatchItem{1, 1, []byte("1")},
-		BatchItem{2, 0, []byte("2")},
-		BatchItem{3, 1, []byte("3")},
+		BatchItem{0, []byte("0"), 0},
+		BatchItem{1, []byte("1"), 1},
+		BatchItem{2, []byte("2"), 0},
+		BatchItem{3, []byte("3"), 1},
 	}
 	bp = b.Partitioned()
 	require.Len(t, bp, 2)
@@ -38,10 +38,10 @@ func TestBatchPartitioned(t *testing.T) {
 
 func TestBatchPartitionIndexed(t *testing.T) {
 	b := Batch{
-		BatchItem{0, 0x0000000000000000, []byte("0")},
-		BatchItem{1, 0x4000000000000000, []byte("1")},
-		BatchItem{2, 0x8000000000000000, []byte("2")},
-		BatchItem{3, 0xc000000000000000, []byte("3")},
+		BatchItem{0, []byte("0"), 0x0000},
+		BatchItem{1, []byte("1"), 0x4000},
+		BatchItem{2, []byte("2"), 0x8000},
+		BatchItem{3, []byte("3"), 0xc000},
 	}
 	bp := b.PartitionIndexed(4)
 	require.Equal(t, 4, len(bp), "%#v", bp)
@@ -50,10 +50,10 @@ func TestBatchPartitionIndexed(t *testing.T) {
 		assert.Equal(t, []byte(fmt.Sprintf("%d", b[0].N)), b[0].Hash)
 	}
 	b = Batch{
-		BatchItem{0, 0x0000000000000000, []byte("0")},
-		BatchItem{1, 0x8000000000000000, []byte("1")},
-		BatchItem{2, 0x0000000000000000, []byte("2")},
-		BatchItem{3, 0x8000000000000000, []byte("3")},
+		BatchItem{0, []byte("0"), 0x0000},
+		BatchItem{1, []byte("1"), 0x8000},
+		BatchItem{2, []byte("2"), 0x0000},
+		BatchItem{3, []byte("3"), 0x8000},
 	}
 	bp = b.PartitionIndexed(2)
 	require.Len(t, bp, 2)
@@ -98,10 +98,10 @@ func TestBatchResponseToJson(t *testing.T) {
 
 type mockHasher struct{}
 
-func (h *mockHasher) Hash(a, b []byte) ([]byte, uint64) {
+func (h *mockHasher) Hash(a, b []byte) ([]byte, uint16) {
 	sha := sha1.Sum(append(a, b...))
-	return sha[:16], uint64(0)
+	return sha[:16], uint16(0)
 }
-func (h *mockHasher) GetPartition([]byte) uint64 {
-	return uint64(0)
+func (h *mockHasher) GetPartition([]byte) uint16 {
+	return uint16(0)
 }
