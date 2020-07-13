@@ -1,6 +1,8 @@
 # Shackle
 
-Shackle is a horizontally scalable distributed hash set with two phase commit built on LMDB and Raft.
+Shackle is a horizontally scalable distributed hash set with automatic eviction, linearizable isolation
+and two phase commit built on LMDB and Dragonboat. It was created specifically to provide a durable,
+consistent, cost efficient solution to high volume event stream deduplication.
 
 ## Roadmap
 
