@@ -125,8 +125,8 @@ func NewHost(
 		h.nodeID = nodeID
 		return h
 	}
-	// level := dblog.WARNING
-	level := dblog.INFO
+	level := dblog.WARNING
+	// level := dblog.INFO
 	dblog.GetLogger("dragonboat").SetLevel(level)
 	dblog.GetLogger("transport").SetLevel(level)
 	dblog.GetLogger("logdb").SetLevel(level)
@@ -172,6 +172,44 @@ func (h *host) Start() (err error) {
 			}
 		}
 	}()
+	return
+}
+
+func (h *host) startNodes(init bool) (err error) {
+	for _, nodeManifest := range h.manifest.Catalog.Nodes {
+		if nodeManifest.HostID != h.id {
+			continue
+		}
+		var peers = make(map[uint64]string)
+		if init {
+			peers = h.manifest.GetPartitionPeers(nodeManifest.Partition)
+		}
+		n, err := NewNode(h.cfg, h.log, h.svcHash, h.svcPersistence, nodeManifest.Partition)
+		if err != nil {
+			h.log.Errorf(err.Error())
+			return err
+		}
+		var factory = func(clusterID uint64, nodeID uint64) dbsm.IOnDiskStateMachine {
+			n.ClusterID = clusterID
+			n.ID = nodeID
+			return n
+		}
+		// println(len(peers), !(nodeManifest.IsLeader && init))
+		err = h.nodeHost.StartOnDiskCluster(peers, !init, factory, dbconf.Config{
+			NodeID:             h.id,
+			ClusterID:          uint64(nodeManifest.ClusterID),
+			ElectionRTT:        10,
+			HeartbeatRTT:       1,
+			CheckQuorum:        true,
+			SnapshotEntries:    2000,
+			CompactionOverhead: 1000,
+		})
+		if err != nil {
+			h.log.Errorf(err.Error())
+			return err
+		}
+		h.nodes[nodeManifest.ID] = n
+	}
 	return
 }
 
@@ -285,44 +323,6 @@ func (h *host) init() {
 			h.starting = false
 		}
 	}
-}
-
-func (h *host) startNodes(init bool) (err error) {
-	for _, nodeManifest := range h.manifest.Catalog.Nodes {
-		if nodeManifest.HostID != h.id {
-			continue
-		}
-		var peers = make(map[uint64]string)
-		if init {
-			peers = h.manifest.GetPartitionPeers(nodeManifest.Partition)
-		}
-		n, err := NewNode(h.cfg, h.log, h.svcHash, h.svcPersistence, nodeManifest.Partition)
-		if err != nil {
-			h.log.Errorf(err.Error())
-			return err
-		}
-		var factory = func(clusterID uint64, nodeID uint64) dbsm.IOnDiskStateMachine {
-			n.ClusterID = clusterID
-			n.ID = nodeID
-			return n
-		}
-		// println(len(peers), !(nodeManifest.IsLeader && init))
-		err = h.nodeHost.StartOnDiskCluster(peers, !init, factory, dbconf.Config{
-			NodeID:             h.id,
-			ClusterID:          uint64(nodeManifest.ClusterID),
-			ElectionRTT:        10,
-			HeartbeatRTT:       1,
-			CheckQuorum:        true,
-			SnapshotEntries:    20000,
-			CompactionOverhead: 10000,
-		})
-		if err != nil {
-			h.log.Errorf(err.Error())
-			return err
-		}
-		h.nodes[nodeManifest.ID] = n
-	}
-	return
 }
 
 // Update satisfies statemachine.IStateMachine

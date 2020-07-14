@@ -1,0 +1,56 @@
+env: dev
+
+log:
+  level: debug
+
+api:
+  http:
+    port: 8080
+    keepalive: true
+    keepalive_period: 60s
+    max_conns_per_ip: 10000
+    read_timeout: 15s
+    write_timeout: 15s
+    idle_timeout: 15s
+  grpc:
+    port: 9090
+
+repo:
+  hash:
+    cachesize: 100000
+    expiration_batch_size: 1000
+    key_expiration: 730h
+    lock_expiration: 10s
+    sweep_interval: 10s
+    path_ix: /data-ebs/node
+
+monitor:
+  prometheus:
+    port: 9100
+  log:
+    enabled: true
+    level: info
+
+host:
+  id: 1
+  deployment_id: 1
+  keylength: 16
+  partitions: 16
+  pepper: sriracha
+  replica_count: 2
+  witness_count: 1
+  int_api_addr: shackle-1:4708
+  raft_addr: shackle-1:4709
+  raft_dir: /data/raft
+  raft_solo: true
+  meta:
+    zone: a
+  vary:
+    - zone
+  join:
+    - id: 1
+      raft_addr: shackle-1:4709
+    - id: 2
+      raft_addr: shackle-2:4709
+    - id: 3
+      raft_addr: shackle-3:4709

@@ -8,7 +8,7 @@ LDFLAGS := -ldflags "-X 'main.Version=$(VERSION)' -X 'main.Hash=$(HASH)'" $(BUIL
 
 DATA_DIR := /data
 
-DEV_CFG := _example/config.1.yml,_example/config.2.yml,_example/config.3.yml
+DEV_CFG := _example/local_3x2/config.1.yml,_example/local_3x2/config.2.yml,_example/local_3x2/config.3.yml
 
 
 clean:
