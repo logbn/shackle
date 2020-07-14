@@ -42,7 +42,7 @@ const (
 	EVENT_RESPONSE_SUCCESS uint64 = 1
 
 	metaClusterID   = math.MaxUint64
-	raftTimeout     = 5 * time.Second
+	raftTimeout     = 1 * time.Second
 	rttMilliseconds = 10
 )
 
