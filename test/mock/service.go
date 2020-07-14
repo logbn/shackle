@@ -24,11 +24,11 @@ func (m *ServicePersistence) Init(cat entity.Catalog, nodeID uint64) (err error)
 	m.incr("Init")
 	return
 }
-func (m *ServicePersistence) InitRepo(partition uint16) (err error){
+func (m *ServicePersistence) InitRepo(partition uint16) (err error) {
 	m.incr("InitRepo")
 	return
 }
-func (m *ServicePersistence) SyncRepo(partition uint16) (err error){
+func (m *ServicePersistence) SyncRepo(partition uint16) (err error) {
 	m.incr("SyncRepo")
 	return
 }
@@ -73,7 +73,7 @@ func (m *ServicePersistence) Commit(batch entity.Batch) (res []uint8, err error)
 	}
 	return
 }
-func (m *ServicePersistence) MultiExec(part uint16, ops []uint8, batches []entity.Batch) (res [][]uint8, err error){
+func (m *ServicePersistence) MultiExec(part uint16, ops []uint8, batches []entity.Batch) (res [][]uint8, err error) {
 	m.incr("MultiExec")
 	res = make([][]uint8, len(ops))
 	for i := range ops {

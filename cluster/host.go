@@ -190,6 +190,7 @@ func (h *host) startNodes(init bool) (err error) {
 			return err
 		}
 		var factory = func(clusterID uint64, nodeID uint64) dbsm.IOnDiskStateMachine {
+			fmt.Printf("[Host %d] Started node %d:%d\n", h.id, clusterID, nodeID)
 			n.ClusterID = clusterID
 			n.ID = nodeID
 			return n
@@ -215,7 +216,7 @@ func (h *host) startNodes(init bool) (err error) {
 
 // LeaderUpdated receives leader promotion notifications
 func (h *host) LeaderUpdated(info dbio.LeaderInfo) {
-	if info.ClusterID == metaClusterID && h.leaderID != info.LeaderID {
+	if !h.active && info.ClusterID == metaClusterID && h.leaderID != info.LeaderID && info.LeaderID != 0 {
 		rs, err := h.nodeHost.ReadIndex(metaClusterID, raftTimeout)
 		if rs != nil {
 			defer rs.Release()
@@ -229,7 +230,6 @@ func (h *host) LeaderUpdated(info dbio.LeaderInfo) {
 		if err != nil {
 			h.log.Errorf(err.Error())
 		}
-		h.leaderID = info.LeaderID
 		if status == entity.HOST_STATUS_ACTIVE {
 			err = h.svcPersistence.Init(h.manifest.Catalog, h.id)
 			if err != nil {
@@ -242,6 +242,7 @@ func (h *host) LeaderUpdated(info dbio.LeaderInfo) {
 			h.starting = true
 		}
 	}
+	h.leaderID = info.LeaderID
 }
 
 func (h *host) isLeader() bool {

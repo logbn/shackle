@@ -44,9 +44,9 @@ type node struct {
 	active         bool
 
 	metricMutex sync.Mutex
-	batches int
-	updates int
-	items   int
+	batches     int
+	updates     int
+	items       int
 }
 
 // NewNode returns a new node
@@ -58,14 +58,14 @@ func NewNode(
 	partition uint16,
 ) (*node, error) {
 	n := &node{
-		cfg: cfg,
-		log: log,
-		Partition: partition,
-		keylen: cfg.KeyLength,
-		svcHash: svcHash,
+		cfg:            cfg,
+		log:            log,
+		Partition:      partition,
+		keylen:         cfg.KeyLength,
+		svcHash:        svcHash,
 		svcPersistence: svcPersistence,
-		activeChan: make(chan bool),
-		active: true,
+		activeChan:     make(chan bool),
+		active:         true,
 	}
 	return n, nil
 }

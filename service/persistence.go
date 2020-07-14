@@ -63,6 +63,10 @@ func (c *persistence) Init(cat entity.Catalog, hostID uint64) (err error) {
 		err = fmt.Errorf("hostID not found: %d", hostID)
 		return
 	}
+	if len(clusterIDs) == len(c.partitions) {
+		c.log.Warnf("[Host %d] Duplicate persistence initialization", hostID)
+		return
+	}
 	for _, clusterID := range clusterIDs {
 		hashRepo, err = c.repoFactory(c.repoCfg, clusterID)
 		if err != nil {
@@ -75,6 +79,9 @@ func (c *persistence) Init(cat entity.Catalog, hostID uint64) (err error) {
 }
 
 func (c *persistence) InitRepo(partition uint16) (err error) {
+	if _, ok := c.repos[partition]; ok {
+		return
+	}
 	hashRepo, err := c.repoFactory(c.repoCfg, partition)
 	if err != nil {
 		return

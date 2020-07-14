@@ -21,15 +21,15 @@ func TestNewHash(t *testing.T) {
 	os.MkdirAll(realdir, 0777)
 	t.Run("NonExistantDatabase", func(t *testing.T) {
 		_, err := NewHash(&config.RepoHash{
-			PathIndex:      fakedir,
-			CacheSize:      1000,
+			PathIndex: fakedir,
+			CacheSize: 1000,
 		}, 2)
 		require.True(t, os.IsNotExist(err))
 	})
 	t.Run("Success", func(t *testing.T) {
 		_, err := NewHash(&config.RepoHash{
-			PathIndex:      realdir,
-			CacheSize:      1000,
+			PathIndex: realdir,
+			CacheSize: 1000,
 		}, 3)
 		require.Nil(t, err)
 	})
@@ -42,8 +42,8 @@ func TestHash(t *testing.T) {
 	os.RemoveAll(tmpdir)
 	os.MkdirAll(tmpdir, 0777)
 	repo, err := NewHash(&config.RepoHash{
-		PathIndex:      tmpdir,
-		CacheSize:      1000,
+		PathIndex: tmpdir,
+		CacheSize: 1000,
 	}, 4)
 	require.Nil(t, err)
 	repo.(*hash).clock = clk
@@ -269,8 +269,8 @@ func TestHashClose(t *testing.T) {
 	os.RemoveAll(tmpdir)
 	os.MkdirAll(tmpdir, 0777)
 	repo, err := NewHash(&config.RepoHash{
-		PathIndex:      tmpdir,
-		CacheSize:      1000,
+		PathIndex: tmpdir,
+		CacheSize: 1000,
 	}, 7)
 	require.Nil(t, err)
 	repo.Close()
