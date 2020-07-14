@@ -22,7 +22,7 @@ repo:
     key_expiration: 730h
     lock_expiration: 10s
     sweep_interval: 10s
-    path_ix: /data-ebs/node
+    path_ix: /data/node
 
 monitor:
   prometheus:
@@ -41,7 +41,7 @@ host:
   witness_count: 1
   int_api_addr: shackle-2:4708
   raft_addr: shackle-2:4709
-  raft_dir: /data/raft
+  raft_dir: /data-ebs/raft
   raft_solo: true
   meta:
     zone: a
