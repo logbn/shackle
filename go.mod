@@ -21,6 +21,7 @@ require (
 	github.com/stretchr/testify v1.4.0
 	github.com/tidwall/gjson v1.6.0 // indirect
 	github.com/tsenart/vegeta v12.7.0+incompatible // indirect
+	github.com/tsenart/vegeta/v12 v12.8.3 // indirect
 	github.com/valyala/fasthttp v1.14.0
 	github.com/valyala/fastjson v1.5.1
 	golang.org/x/sys v0.0.0-20200615200032-f1bc736245b1 // indirect

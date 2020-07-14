@@ -14,7 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/segmentio/encoding/json"
-	"github.com/tsenart/vegeta/lib"
+	"github.com/tsenart/vegeta/v12/lib"
 )
 
 const (
