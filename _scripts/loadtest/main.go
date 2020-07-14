@@ -34,7 +34,7 @@ func main() {
 		duration   = fs.Duration("t", 0, "Time")
 		interval   = fs.Duration("intv", 10 * time.Second, "Time")
 		keepAlive  = fs.Bool("k", false, "Keepalive")
-		maxConn    = fs.Int("con", 10000, "Max open idle connections per target host")
+		maxConn    = fs.Int("c", 10000, "Max open idle connections per target host")
 		maxWorkers = fs.Int("w", 8, "Max workers")
 		pctlocks   = fs.Int("pctlocks", 0, "Percent Locks (max 100)")
 	)
@@ -82,7 +82,7 @@ func main() {
 	})
 	attacker := vegeta.NewAttacker(
 		vegeta.KeepAlive(*keepAlive),
-		vegeta.Connections(*maxConn),
+		vegeta.MaxConnections(*maxConn),
 		vegeta.MaxWorkers(uint64(*maxWorkers)),
 	)
 
