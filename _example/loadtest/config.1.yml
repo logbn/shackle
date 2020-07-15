@@ -42,6 +42,7 @@ host:
   int_api_addr: shackle-1:4708
   raft_addr: shackle-1:4709
   raft_dir: /data-ebs/raft
+  raft_wal: /data/wal
   raft_solo: true
   meta:
     zone: a

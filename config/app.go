@@ -39,6 +39,7 @@ type Host struct {
 	IntApiAddr   string     `yaml:"int_api_addr"`
 	RaftAddr     string     `yaml:"raft_addr"`
 	RaftDir      string     `yaml:"raft_dir"`
+	RaftWalDir   string     `yaml:"raft_wal"`
 	RaftSolo     bool       `yaml:"raft_solo"`
 	Meta         HostMeta   `yaml:"meta"`
 	Join         []HostJoin `yaml:"join"`

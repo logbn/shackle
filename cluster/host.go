@@ -136,6 +136,7 @@ func NewHost(
 	h.nodeHost, err = dragonboat.NewNodeHost(dbconf.NodeHostConfig{
 		DeploymentID:      cfg.DeploymentID,
 		NodeHostDir:       cfg.RaftDir,
+		WALDir:            cfg.RaftWalDir,
 		RTTMillisecond:    rttMilliseconds,
 		RaftAddress:       cfg.RaftAddr,
 		EnableMetrics:     true,
