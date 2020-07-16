@@ -2,8 +2,6 @@ module highvolume.io/shackle
 
 go 1.13
 
-replace github.com/lni/dragonboat/v3 => ../dragonboat
-
 require (
 	github.com/benbjohnson/clock v1.0.2
 	github.com/bmatsuo/lmdb-go v1.8.0
