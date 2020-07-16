@@ -50,6 +50,9 @@ func (m *Manifest) Initializing() bool {
 func (m *Manifest) Active() bool {
 	return m.Status == DEPLOYMENT_STATUS_ACTIVE
 }
+func (m *Manifest) Allocated() bool {
+	return len(m.Catalog.Nodes) > 0
+}
 func (m *Manifest) ToJson() (data []byte) {
 	data, _ = json.Marshal(m)
 	return
@@ -96,7 +99,7 @@ func (m *Manifest) GetPartitionPeers(partition uint16) (ret map[uint64]string) {
 // Catalog contains a complete snapshot of the current physical and logical distribution of data within the deployment.
 type Catalog struct {
 	Version      string    `json:"version"`
-	Partitions   int       `json:"partitions"`
+	Partitions   uint16    `json:"partitions"`
 	ReplicaCount int       `json:"replicationCount"`
 	WitnessCount int       `json:"witnessCount"`
 	KeyLength    uint8     `json:"keyLength"`
@@ -247,7 +250,7 @@ func (m *Manifest) Allocate() (cat *Catalog, err error) {
 	var n2 int
 	var lastLeader int
 	var bits = int(math.Log2(float64(cat.Partitions)))
-	for i := 0; i < cat.Partitions; i++ {
+	for i := uint16(0); i < cat.Partitions; i++ {
 		// Distributes leaders more uniformly across nodes
 		if n2 > 0 && n2%hostCount == lastLeader {
 			n2++

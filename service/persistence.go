@@ -17,9 +17,6 @@ type Persistence interface {
 	Init(cat entity.Catalog, nodeID uint64) error
 	InitRepo(partition uint16) (err error)
 	SyncRepo(partition uint16) (err error)
-	Lock(batch entity.Batch) (res []uint8, err error)
-	Rollback(batch entity.Batch) (res []uint8, err error)
-	Commit(batch entity.Batch) (res []uint8, err error)
 	MultiExec(partition uint16, ops []uint8, batches []entity.Batch) (res [][]uint8, err error)
 	GetDatabases() []string
 	Start()
@@ -29,7 +26,7 @@ type Persistence interface {
 type persistence struct {
 	log           log.Logger
 	clock         clock.Clock
-	partitions    map[uint16]repo.Hash
+	partitions    uint16
 	repos         map[uint16]repo.Hash
 	repoFactory   repo.FactoryHash
 	repoCfg       *config.RepoHash
@@ -44,7 +41,7 @@ func NewPersistence(cfg *config.App, log log.Logger, rf repo.FactoryHash) (r *pe
 	return &persistence{
 		log:           log,
 		clock:         clock.New(),
-		partitions:    map[uint16]repo.Hash{},
+		partitions:    cfg.Host.Partitions,
 		repos:         map[uint16]repo.Hash{},
 		repoFactory:   rf,
 		repoCfg:       cfg.Repo.Hash,
@@ -55,26 +52,12 @@ func NewPersistence(cfg *config.App, log log.Logger, rf repo.FactoryHash) (r *pe
 }
 
 func (c *persistence) Init(cat entity.Catalog, hostID uint64) (err error) {
-	c.repoMutex.Lock()
-	defer c.repoMutex.Unlock()
-	var hashRepo repo.Hash
 	var clusterIDs = cat.GetHostPartitions(hostID)
 	if clusterIDs == nil {
 		err = fmt.Errorf("hostID not found: %d", hostID)
 		return
 	}
-	if len(clusterIDs) == len(c.partitions) {
-		c.log.Warnf("[Host %d] Duplicate persistence initialization", hostID)
-		return
-	}
-	for _, clusterID := range clusterIDs {
-		hashRepo, err = c.repoFactory(c.repoCfg, clusterID)
-		if err != nil {
-			return
-		}
-		c.repos[clusterID] = hashRepo
-		c.partitions[clusterID] = hashRepo
-	}
+	c.partitions = uint16(cat.Partitions)
 	return
 }
 
@@ -82,19 +65,18 @@ func (c *persistence) InitRepo(partition uint16) (err error) {
 	if _, ok := c.repos[partition]; ok {
 		return
 	}
-	hashRepo, err := c.repoFactory(c.repoCfg, partition)
+	hashRepo, err := c.repoFactory(c.repoCfg, c.partitions, partition)
 	if err != nil {
 		return
 	}
 	c.repoMutex.Lock()
 	defer c.repoMutex.Unlock()
 	c.repos[partition] = hashRepo
-	c.partitions[partition] = hashRepo
 	return
 }
 
 func (c *persistence) SyncRepo(partition uint16) (err error) {
-	hashRepo, ok := c.partitions[partition]
+	hashRepo, ok := c.repos[partition]
 	if !ok {
 		err = fmt.Errorf("Partition not found %04x", partition)
 		return
@@ -108,142 +90,19 @@ func (c *persistence) GetDatabases() []string {
 	return nil
 }
 
-// Lock determines whether each hash has been seen and locks for processing
-// Locks have a set expiration (default 30s). Items are unlocked after this timeout expires.
-// Lock abandonment is measured and exposed as a metric.
-func (c *persistence) Lock(batch entity.Batch) (res []uint8, err error) {
-	res = make([]uint8, len(batch))
-	var wg sync.WaitGroup
-	var mutex sync.Mutex
-	c.repoMutex.RLock()
-	defer c.repoMutex.RUnlock()
-
-	for k, batch := range batch.Partitioned() {
-		wg.Add(1)
-		go func(k uint16, batch entity.Batch) {
-			hashRepo, ok := c.partitions[k]
-			if !ok {
-				err = fmt.Errorf("Partition not found %d", k)
-				c.log.Errorf(err.Error())
-				wg.Done()
-				return
-			}
-			r1, err2 := hashRepo.Lock(batch)
-			mutex.Lock()
-			if err2 != nil {
-				c.log.Errorf(err2.Error())
-				for _, item := range batch {
-					res[item.N] = entity.ITEM_ERROR
-				}
-				err = err2
-			} else {
-				for i, item := range batch {
-					res[item.N] = r1[i]
-				}
-			}
-			mutex.Unlock()
-			wg.Done()
-		}(k, batch)
-	}
-	wg.Wait()
-
-	return
-}
-
-// Rollback determines whether each hash has been seen and locks for processing
-func (c *persistence) Rollback(batch entity.Batch) (res []uint8, err error) {
-	res = make([]uint8, len(batch))
-	var wg sync.WaitGroup
-	var mutex sync.Mutex
-	c.repoMutex.RLock()
-	defer c.repoMutex.RUnlock()
-
-	for k, batch := range batch.Partitioned() {
-		wg.Add(1)
-		go func(k uint16, batch entity.Batch) {
-			hashRepo, ok := c.partitions[k]
-			if !ok {
-				err = fmt.Errorf("Partition not found %d", k)
-				c.log.Errorf(err.Error())
-				wg.Done()
-				return
-			}
-			r1, err2 := hashRepo.Rollback(batch)
-			mutex.Lock()
-			if err2 != nil {
-				c.log.Errorf(err2.Error())
-				for _, item := range batch {
-					res[item.N] = entity.ITEM_ERROR
-				}
-				err = err2
-			} else {
-				for i, item := range batch {
-					res[item.N] = r1[i]
-				}
-			}
-			mutex.Unlock()
-			wg.Done()
-		}(k, batch)
-	}
-	wg.Wait()
-
-	return
-}
-
-// Commit will write hashes to the index and remove them from the lock if present.
-// A commit will always succeed, regardless of whether the items are locked or by whom.
-// A commit against an existing item will not indicate whether the item already existed.
-// Commit volume against existing items is measured and exposed as a metric.
-// The only way to read the state of an item is to acquire a lock.
-func (c *persistence) Commit(batch entity.Batch) (res []uint8, err error) {
-	res = make([]uint8, len(batch))
-	var wg sync.WaitGroup
-	var mutex sync.Mutex
-	c.repoMutex.RLock()
-	defer c.repoMutex.RUnlock()
-
-	for k, batch := range batch.Partitioned() {
-		wg.Add(1)
-		go func(k uint16, batch entity.Batch) {
-			hashRepo, ok := c.partitions[k]
-			if !ok {
-				err = fmt.Errorf("Partition not found %d", k)
-				c.log.Errorf(err.Error())
-				wg.Done()
-				return
-			}
-			r1, err2 := hashRepo.Commit(batch)
-			mutex.Lock()
-			if err2 != nil {
-				c.log.Errorf(err2.Error())
-				for _, item := range batch {
-					res[item.N] = entity.ITEM_ERROR
-				}
-				err = err2
-			} else {
-				for i, item := range batch {
-					res[item.N] = r1[i]
-				}
-			}
-			mutex.Unlock()
-			wg.Done()
-		}(k, batch)
-	}
-	wg.Wait()
-
-	return
-}
-
 func (c *persistence) MultiExec(partition uint16, ops []uint8, batches []entity.Batch) (res [][]uint8, err error) {
 	c.repoMutex.RLock()
 	defer c.repoMutex.RUnlock()
-	hashRepo, ok := c.partitions[partition]
+	hashRepo, ok := c.repos[partition]
 	if !ok {
 		err = fmt.Errorf("Partition not found %d", partition)
 		c.log.Errorf(err.Error())
 		return
 	}
 	res, err = hashRepo.MultiExec(ops, batches)
+	if err != nil {
+		c.log.Errorf(err.Error())
+	}
 	return
 }
 

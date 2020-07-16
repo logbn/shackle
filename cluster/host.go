@@ -42,7 +42,7 @@ const (
 	EVENT_RESPONSE_SUCCESS uint64 = 1
 
 	metaClusterID   = math.MaxUint64
-	raftTimeout     = 1 * time.Second
+	raftTimeout     = 3 * time.Second
 	rttMilliseconds = 10
 )
 
@@ -190,8 +190,8 @@ func (h *host) startNodes(init bool) (err error) {
 			h.log.Errorf(err.Error())
 			return err
 		}
+		cid := uint64(nodeManifest.ClusterID)
 		var factory = func(clusterID uint64, nodeID uint64) dbsm.IOnDiskStateMachine {
-			fmt.Printf("[Host %d] Started node %d:%d\n", h.id, clusterID, nodeID)
 			n.ClusterID = clusterID
 			n.ID = nodeID
 			return n
@@ -199,7 +199,7 @@ func (h *host) startNodes(init bool) (err error) {
 		// println(len(peers), !(nodeManifest.IsLeader && init))
 		err = h.nodeHost.StartOnDiskCluster(peers, !init, factory, dbconf.Config{
 			NodeID:             h.id,
-			ClusterID:          uint64(nodeManifest.ClusterID),
+			ClusterID:          cid,
 			ElectionRTT:        10,
 			HeartbeatRTT:       1,
 			CheckQuorum:        true,
@@ -207,7 +207,7 @@ func (h *host) startNodes(init bool) (err error) {
 			CompactionOverhead: 1000,
 		})
 		if err != nil {
-			h.log.Errorf(err.Error())
+			h.log.Errorf("%s, %#v", err.Error(), nodeManifest)
 			return err
 		}
 		h.nodes[nodeManifest.ID] = n
@@ -284,16 +284,18 @@ func (h *host) init() {
 				return
 			}
 		}
-		h.log.Debugf("[Host %d] Allocating %d partitions", h.id, h.manifest.Catalog.Partitions)
-		catalog, err := h.manifest.Allocate()
-		if err != nil {
-			h.log.Errorf(err.Error())
-			return
-		}
-		_, err = h.syncPropose(h.wrapMsg(EVENT_TYPE_ALLOCATE, catalog.ToJson()))
-		if err != nil {
-			h.log.Errorf("[Host %d] Error proposing allocation: %s", h.id, err.Error())
-			return
+		if !h.manifest.Allocated() {
+			h.log.Debugf("[Host %d] Allocating %d partitions", h.id, h.manifest.Catalog.Partitions)
+			catalog, err := h.manifest.Allocate()
+			if err != nil {
+				h.log.Errorf(err.Error())
+				return
+			}
+			_, err = h.syncProposeExtended(h.wrapMsg(EVENT_TYPE_ALLOCATE, catalog.ToJson()), time.Minute)
+			if err != nil {
+				h.log.Errorf("[Host %d] Error proposing allocation: %s", h.id, err.Error())
+				return
+			}
 		}
 		h.updateDeploymentStatus(entity.DEPLOYMENT_STATUS_ACTIVE)
 	}
@@ -323,6 +325,8 @@ func (h *host) init() {
 			h.log.Infof("[Host %d] active", h.id)
 			h.active = true
 			h.starting = false
+		} else {
+			h.log.Errorf("[Host %d] Unable to activate %s", h.id, err.Error())
 		}
 	}
 }
@@ -389,8 +393,11 @@ func (h *host) wrapMsg(etype uint8, msg []byte) []byte {
 	return append([]byte{EVENT_SCHEMA_VERSION, etype}, msg...)
 }
 
-func (h *host) getSession(clusterID uint64) (ctx context.Context, sess *dbclient.Session, err error) {
-	ctx, _ = context.WithTimeout(context.Background(), raftTimeout)
+func (h *host) getSession(clusterID uint64, t time.Duration) (ctx context.Context, sess *dbclient.Session, err error) {
+	if t < 1 {
+		t = raftTimeout
+	}
+	ctx, _ = context.WithTimeout(context.Background(), t)
 	ctx2, _ := context.WithTimeout(context.Background(), raftTimeout)
 	sess, err = h.nodeHost.SyncGetSession(ctx2, clusterID)
 	if err != nil {
@@ -403,7 +410,18 @@ func (h *host) getSession(clusterID uint64) (ctx context.Context, sess *dbclient
 // Convenience method that wraps SyncPropose w/ session acquisition
 // May be overkill. Have to study expected dragonboat session management.
 func (h *host) syncPropose(msg []byte) (res dbsm.Result, err error) {
-	ctx, sess, err := h.getSession(metaClusterID)
+	ctx, sess, err := h.getSession(metaClusterID, 0)
+	if err != nil {
+		return
+	}
+	res, err = h.nodeHost.SyncPropose(ctx, sess, msg)
+	sess.ProposalCompleted()
+	return
+}
+
+// syncProposeExtended extends timeout
+func (h *host) syncProposeExtended(msg []byte, t time.Duration) (res dbsm.Result, err error) {
+	ctx, sess, err := h.getSession(metaClusterID, t)
 	if err != nil {
 		return
 	}
@@ -637,11 +655,11 @@ func (h *host) handleBatch(op uint8, batch entity.Batch) (res []uint8, err error
 			}
 			// Mark result
 			mutex.Lock()
-			defer mutex.Unlock()
 			for i, item := range batch {
 				res[item.N] = delResp[i]
 				processed++
 			}
+			mutex.Unlock()
 			wg.Done()
 		}(planSegment.NodeAddr, planSegment.Batch)
 	}
@@ -719,25 +737,28 @@ func (h *host) handleLocalBatch(op uint8, batch entity.Batch) (res []uint8, err 
 	for nodeID, batch := range batches {
 		wg.Add(1)
 		go func(nodeID uint64, batch entity.Batch) {
-			defer wg.Done()
-			node, ok := h.nodes[nodeID]
+			n, ok := h.nodes[nodeID]
 			if !ok {
 				h.log.Errorf("Unrecognized node (%d) %d", nodeID, len(h.nodes))
+				wg.Done()
 				return
 			}
-			res2, err2 := h.syncProposeNode(node.GetClusterID(), batch.ToBytes(op))
+			res2, err2 := h.syncProposeNode(n.GetClusterID(), batch.ToBytes(op))
 			if err2 != nil {
 				err = err2
-				h.log.Errorf(err.Error())
+				h.log.Errorf("[Host %d] %s", h.id, err.Error())
+				wg.Done()
 				return
 			}
 			if len(res2.Data) < len(batch) {
 				h.log.Errorf("Incorrect batch response length: %d != %d", len(res2.Data), len(batch))
+				wg.Done()
 				return
 			}
 			for i, item := range batch {
 				res[item.N] = byte(res2.Data[i])
 			}
+			wg.Done()
 		}(nodeID, batch)
 	}
 	wg.Wait()

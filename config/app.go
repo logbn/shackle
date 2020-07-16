@@ -32,7 +32,7 @@ type Host struct {
 	ID           uint64     `yaml:"id"`
 	DeploymentID uint64     `yaml:"deployment_id"`
 	KeyLength    int        `yaml:"keylength"`
-	Partitions   int        `yaml:"partitions"`
+	Partitions   uint16     `yaml:"partitions"`
 	Pepper       string     `yaml:"pepper"`
 	ReplicaCount int        `yaml:"replica_count"`
 	WitnessCount int        `yaml:"witness_count"`

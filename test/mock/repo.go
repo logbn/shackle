@@ -11,7 +11,7 @@ import (
 	"highvolume.io/shackle/repo"
 )
 
-func RepoFactoryhash(cfg *config.RepoHash, id uint16) (r repo.Hash, err error) {
+func RepoFactoryhash(cfg *config.RepoHash, partitions, id uint16) (r repo.Hash, err error) {
 	if cfg.PathIndex == "error" {
 		err = fmt.Errorf("error")
 		return
@@ -28,15 +28,6 @@ type RepoHash struct {
 	SweepLockedFunc  func(exp time.Time) (total int, deleted int, err error)
 }
 
-func (r *RepoHash) Lock(batch entity.Batch) (res []uint8, err error) {
-	return r.getRes(batch)
-}
-func (r *RepoHash) Rollback(batch entity.Batch) (res []uint8, err error) {
-	return r.getRes(batch)
-}
-func (r *RepoHash) Commit(batch entity.Batch) (res []uint8, err error) {
-	return r.getRes(batch)
-}
 func (r *RepoHash) MultiExec(ops []uint8, batches []entity.Batch) (res [][]uint8, err error) {
 	res = make([][]uint8, len(ops))
 	for i := range ops {

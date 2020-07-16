@@ -13,13 +13,16 @@ type Host struct {
 }
 
 func (n *Host) Lock(batch entity.Batch) (res []uint8, err error) {
-	return n.SvcPersistence.Lock(batch)
+	r, err := n.SvcPersistence.MultiExec(0, []uint8{entity.OP_LOCK}, []entity.Batch{batch})
+	return r[0], err
 }
 func (n *Host) Rollback(batch entity.Batch) (res []uint8, err error) {
-	return n.SvcPersistence.Rollback(batch)
+	r, err := n.SvcPersistence.MultiExec(0, []uint8{entity.OP_ROLLBACK}, []entity.Batch{batch})
+	return r[0], err
 }
 func (n *Host) Commit(batch entity.Batch) (res []uint8, err error) {
-	return n.SvcPersistence.Commit(batch)
+	r, err := n.SvcPersistence.MultiExec(0, []uint8{entity.OP_COMMIT}, []entity.Batch{batch})
+	return r[0], err
 }
 func (n *Host) Start() (err error) {
 	n.SvcPersistence.Start()

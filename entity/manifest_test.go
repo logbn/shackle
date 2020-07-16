@@ -134,7 +134,7 @@ func TestManifestHostStatus(t *testing.T) {
 	assert.Equal(t, false, host.Active())
 }
 
-func makeEmptyManifest(hosts, replicas, witnesses, partitions int) (m *Manifest) {
+func makeEmptyManifest(hosts, replicas, witnesses int, partitions uint16) (m *Manifest) {
 	m = &Manifest{
 		Version:      1,
 		DeploymentID: 1,

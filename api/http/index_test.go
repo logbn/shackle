@@ -21,6 +21,6 @@ func TestIndex(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		test()
 		assert.Equal(t, 200, ctx.Response.StatusCode(), ctx.Response.Header.String())
-		assert.Equal(t, "Welcome!", string(ctx.Response.Body()))
+		assert.Greater(t, len(ctx.Response.Body()), 2000)
 	})
 }

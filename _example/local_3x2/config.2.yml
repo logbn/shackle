@@ -37,7 +37,7 @@ monitor:
 host:
   id: 2
   deployment_id: 1
-  keylength: 16
+  keylength: 13
   partitions: 16
   pepper: sriracha
   replica_count: 2
@@ -45,7 +45,15 @@ host:
   int_api_addr: 127.0.0.1:4718
   raft_addr: 127.0.0.1:4719
   raft_dir: /data/raft2
+  raft_solo: true
   meta:
     zone: b
   vary:
     - zone
+  join:
+    - id: 1
+      raft_addr: 127.0.0.1:4709
+    - id: 2
+      raft_addr: 127.0.0.1:4719
+    - id: 3
+      raft_addr: 127.0.0.1:4729

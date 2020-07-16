@@ -14,7 +14,6 @@ import (
 )
 
 type Node interface {
-	HandleBatch(op uint8, batch entity.Batch) (res []uint8, err error)
 	GetClusterID() uint64
 	GetPartition() uint16
 	Active() bool
@@ -70,48 +69,20 @@ func NewNode(
 	return n, nil
 }
 
-func (n *node) HandleBatch(op uint8, batch entity.Batch) (res []uint8, err error) {
-	if !n.active {
-		err = fmt.Errorf("Starting up")
-		return
-	}
-	// Persist
-	res, err = n.handlePersist(op, batch)
-	if err != nil {
-		n.log.Errorf(err.Error())
-	}
-	return
-}
-
-// Extracted to reduce code duplication
-func (n *node) handlePersist(op uint8, batch entity.Batch) (res []uint8, err error) {
-	res = make([]uint8, len(batch))
-	switch op {
-	case entity.OP_LOCK:
-		res, err = n.svcPersistence.Lock(batch)
-	case entity.OP_COMMIT:
-		res, err = n.svcPersistence.Commit(batch)
-	case entity.OP_ROLLBACK:
-		res, err = n.svcPersistence.Rollback(batch)
-	default:
-		err = fmt.Errorf("Unrecognized operation %d", op)
-	}
-	return
-}
-
 func (n *node) Active() bool {
 	return n.active
 }
 func (n *node) Open(stopc <-chan struct{}) (res uint64, err error) {
+	n.log.Debugf("[Host %d] Open %04x", n.cfg.ID, n.Partition)
 	err = n.svcPersistence.InitRepo(n.Partition)
 	if err != nil {
+		fmt.Printf("%s", err.Error())
 		return
 	}
-	n.log.Debugf("[Host %d] Open %04x", n.cfg.ID, n.Partition)
 	return
 }
 func (n *node) Sync() (err error) {
-	// n.svcPersistence.SyncRepo(n.Partition)
+	n.svcPersistence.SyncRepo(n.Partition)
 	n.metricMutex.Lock()
 	defer n.metricMutex.Unlock()
 	var avgBatches = float64(n.batches) / float64(n.updates)
@@ -127,49 +98,31 @@ func (n *node) PrepareSnapshot() (res interface{}, err error) {
 	return
 }
 func (n *node) Update(ents []dbsm.Entry) ([]dbsm.Entry, error) {
-	var multi = true
 	n.metricMutex.Lock()
 	defer n.metricMutex.Unlock()
 	n.updates++
 	n.batches += len(ents)
-	if multi {
-		var batches = make([]entity.Batch, len(ents))
-		var ops = make([]uint8, len(ents))
-		var err error
-		for i, e := range ents {
-			if len(e.Cmd) == 0 {
-				continue
-			}
-			batches[i], err = entity.BatchFromBytes(e.Cmd[1:], n.keylen, n.svcHash)
-			if err != nil {
-				n.log.Errorf(err.Error())
-			}
-			ops[i] = e.Cmd[0]
-			n.items += len(batches[i])
+	var batches = make([]entity.Batch, len(ents))
+	var ops = make([]uint8, len(ents))
+	var err error
+	for i, e := range ents {
+		if len(e.Cmd) == 0 {
+			continue
 		}
-		res, err := n.svcPersistence.MultiExec(n.Partition, ops, batches)
+		batches[i], err = entity.BatchFromBytes(e.Cmd[1:], n.keylen, n.svcHash)
 		if err != nil {
 			n.log.Errorf(err.Error())
-			return ents, err
 		}
-		for i := range res {
-			ents[i].Result = dbsm.Result{Data: res[i]}
-		}
-	} else {
-		var batch entity.Batch
-		var err error
-		for i, e := range ents {
-			batch, err = entity.BatchFromBytes(e.Cmd[1:], n.keylen, n.svcHash)
-			if err != nil {
-				n.log.Errorf(err.Error())
-			}
-			res, err := n.handlePersist(uint8(e.Cmd[0]), batch)
-			if err != nil {
-				n.log.Errorf(err.Error())
-			}
-			ents[i].Result = dbsm.Result{Data: res}
-			n.items += len(batch)
-		}
+		ops[i] = e.Cmd[0]
+		n.items += len(batches[i])
+	}
+	res, err := n.svcPersistence.MultiExec(n.Partition, ops, batches)
+	if err != nil {
+		n.log.Errorf(err.Error())
+		return ents, err
+	}
+	for i := range res {
+		ents[i].Result = dbsm.Result{Data: res[i]}
 	}
 	// n.log.Debugf("Update")
 	return ents, nil

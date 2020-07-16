@@ -34,7 +34,7 @@ monitor:
 host:
   id: 3
   deployment_id: 1
-  keylength: 16
+  keylength: 13
   partitions: 16
   pepper: sriracha
   replica_count: 2
