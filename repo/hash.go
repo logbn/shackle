@@ -147,10 +147,10 @@ func (c *hash) MultiExec(ops []uint8, batches []entity.Batch) (res [][]uint8, er
 						return
 					}
 					hs := string(item.Hash)
-					k, v, err = cur.Get(item.Hash[2:5], nil, lmdb.SetRange)
+					k, v, err = cur.Get(item.Hash[2:4], nil, lmdb.SetRange)
 					if err == nil {
-						for err == nil && len(v) > 0 && bytes.Compare(item.Hash[2:5], k) == 0 {
-							if bytes.Compare(item.Hash[5:], v[:len(v)-4]) == 0 {
+						for err == nil && len(v) > 0 && bytes.Compare(item.Hash[2:4], k) == 0 {
+							if bytes.Compare(item.Hash[4:], v[:len(v)-4]) == 0 {
 								res[bi][i] = entity.ITEM_EXISTS
 								break
 							}
@@ -173,8 +173,8 @@ func (c *hash) MultiExec(ops []uint8, batches []entity.Batch) (res [][]uint8, er
 						tsi, _ = strconv.Atoi(v.(string))
 					}
 					binary.BigEndian.PutUint32(ts, uint32(tsi))
-					hash := append([]byte{}, item.Hash[5:]...)
-					err = cur.Put(item.Hash[2:5], append(hash, ts...), 0)
+					hash := append([]byte{}, item.Hash[4:]...)
+					err = cur.Put(item.Hash[2:4], append(hash, ts...), 0)
 					if err == nil {
 						res[bi][i] = entity.ITEM_EXISTS
 						if c.cache.Remove(hs) {
@@ -200,10 +200,10 @@ func (c *hash) MultiExec(ops []uint8, batches []entity.Batch) (res [][]uint8, er
 						if err != nil {
 							return
 						}
-						k, v, err = cur.Get(item.Hash[2:5], nil, lmdb.SetRange)
+						k, v, err = cur.Get(item.Hash[2:4], nil, lmdb.SetRange)
 						if err == nil {
-							for err == nil && len(v) > 0 && bytes.Compare(item.Hash[2:5], k) == 0 {
-								if bytes.Compare(item.Hash[5:], v[:len(v)-4]) == 0 {
+							for err == nil && len(v) > 0 && bytes.Compare(item.Hash[2:4], k) == 0 {
+								if bytes.Compare(item.Hash[4:], v[:len(v)-4]) == 0 {
 									res[bi][i] = entity.ITEM_EXISTS
 									break
 								}
@@ -233,9 +233,9 @@ func (c *hash) MultiExec(ops []uint8, batches []entity.Batch) (res [][]uint8, er
 					if err != nil {
 						return
 					}
-					k, v, err = cur.Get(item.Hash[2:5], nil, lmdb.SetRange)
-					for err == nil && len(v) > 0 && bytes.Compare(item.Hash[2:5], k) == 0 {
-						if bytes.Compare(item.Hash[5:], v[:len(v)-4]) == 0 {
+					k, v, err = cur.Get(item.Hash[2:4], nil, lmdb.SetRange)
+					for err == nil && len(v) > 0 && bytes.Compare(item.Hash[2:4], k) == 0 {
+						if bytes.Compare(item.Hash[4:], v[:len(v)-4]) == 0 {
 							res[bi][i] = entity.ITEM_EXISTS
 							break
 						}
