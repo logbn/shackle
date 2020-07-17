@@ -12,6 +12,14 @@ This will likely change after the switch to etcd raft to reflect terminology mor
 
 ![Architecture](https://i.imgur.com/eGC4ImB.png)
 
+## How to run
+
+Clone the source and run `make dev` to spin up a 3 node local cluster. Open `_examples/local_3x2/config.*.yml` to inspect and alter the expected directory configuration.
+
+## Status
+
+This repository is in pre-alpha. It has been made public for review. The master branch should work, but should not be deployed to staging environments until tagged v0.1.0
+
 ## Roadmap
 
 ### v0.1.0
