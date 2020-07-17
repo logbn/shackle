@@ -7,7 +7,7 @@ consistent, cost efficient solution to high volume event stream deduplication.
 ## Terminology
 
 The terminology used by this library is slightly unconventional. 
-Rather than following conventional cluster/node/partition terminology, it borrows its deployment/host/node terminology from its current raft integration (dragonboat).
+Rather than following conventional cluster/node/partition terminology, it borrows its deployment/host/node terminology from its current raft integration ([dragonboat](https://github.com/lni/dragonboat)).
 This will likely change after the switch to etcd raft to reflect terminology more in line with [industry standards](https://www.cockroachlabs.com/docs/stable/architecture/overview.html#glossary).
 
 ![Architecture](https://i.imgur.com/eGC4ImB.png)
