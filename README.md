@@ -4,6 +4,33 @@ Shackle is a horizontally scalable distributed hash set with automatic eviction,
 and two phase commit built on LMDB and Dragonboat. It was created specifically to provide a durable,
 consistent, cost efficient solution to high volume event stream deduplication.
 
+## API
+
+The API consists of 3 operations available via JSON API or GRPC.
+All operations take an array of strings (or bytes) and return an array of integers.
+Each response integer represents a status code for the corresponding item in the batch.
+
+
+**Lock**  [“aaa”, “bbb”, “ccc”, “ddd”, “eee”, “fff”]  
+Response: [2, 2, 2, 2, 3, 4]  
+Four were successfully *locked* (2) and will remain so for 30 seconds.  
+One item was *busy* (3), and one already *exists* (4) in the database.
+
+
+**Rollback**  [“aaa”]  
+Response: [1]  
+Here, one previously locked item is successfully rolled back to *open* (1).  
+This is common (and necessary) when a client fails to process an item.
+
+
+**Commit**  [“bbb”, “cccc”, “dddd”]  
+Response: [4, 4, 4]  
+These three locked items are committed to the database and show as *exists* (4).  
+They will remain committed until they expire.
+
+These three simple batch operations can be combined to implement an observable message deduplication system where duplicate delivery can be drastically reduced and exactly once delivery can be measured accurately.
+
+
 ## Terminology
 
 The terminology used by this library is slightly unconventional. 
