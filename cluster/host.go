@@ -85,6 +85,7 @@ type host struct {
 	keylen         int
 	factory        func(uint64, uint64) dbsm.IStateMachine
 	nodes          map[uint64]Node
+	proposers      map[uint64]Proposer
 	metaSession    *dbclient.Session
 }
 
@@ -119,6 +120,7 @@ func NewHost(
 		keylen:         cfg.KeyLength,
 		clock:          clock.NewMock(),
 		nodes:          make(map[uint64]Node),
+		proposers:      make(map[uint64]Proposer),
 	}
 	h.factory = func(clusterID uint64, nodeID uint64) dbsm.IStateMachine {
 		h.clusterID = clusterID
@@ -190,7 +192,7 @@ func (h *host) startNodes(init bool) (err error) {
 			h.log.Errorf(err.Error())
 			return err
 		}
-		cid := uint64(nodeManifest.ClusterID)
+		clusterID := uint64(nodeManifest.ClusterID)
 		var factory = func(clusterID uint64, nodeID uint64) dbsm.IOnDiskStateMachine {
 			n.ClusterID = clusterID
 			n.ID = nodeID
@@ -199,7 +201,7 @@ func (h *host) startNodes(init bool) (err error) {
 		// println(len(peers), !(nodeManifest.IsLeader && init))
 		err = h.nodeHost.StartOnDiskCluster(peers, !init, factory, dbconf.Config{
 			NodeID:             h.id,
-			ClusterID:          cid,
+			ClusterID:          clusterID,
 			ElectionRTT:        10,
 			HeartbeatRTT:       1,
 			CheckQuorum:        true,
@@ -211,6 +213,7 @@ func (h *host) startNodes(init bool) (err error) {
 			return err
 		}
 		h.nodes[nodeManifest.ID] = n
+		h.proposers[clusterID] = NewProposerBatched(h.cfg.Batch, h.nodeHost, clusterID)
 	}
 	return
 }
@@ -431,11 +434,8 @@ func (h *host) syncProposeExtended(msg []byte, t time.Duration) (res dbsm.Result
 }
 
 // Convenience method that wraps SyncPropose w/ session acquisition
-func (h *host) syncProposeNode(clusterID uint64, msg []byte) (res dbsm.Result, err error) {
-	ctx, _ := context.WithTimeout(context.Background(), raftTimeout)
-	sess := h.nodeHost.GetNoOPSession(clusterID)
-	res, err = h.nodeHost.SyncPropose(ctx, sess, msg)
-	return
+func (h *host) syncProposeNode(clusterID uint64, op uint8, batch entity.Batch) (res []uint8, err error) {
+	return h.proposers[clusterID].Propose(op, batch)
 }
 
 // updateMeta returns false if meta is up to date and true otherwise, proposing host meta data update.
@@ -743,20 +743,20 @@ func (h *host) handleLocalBatch(op uint8, batch entity.Batch) (res []uint8, err 
 				wg.Done()
 				return
 			}
-			res2, err2 := h.syncProposeNode(n.GetClusterID(), batch.ToBytes(op))
+			res2, err2 := h.syncProposeNode(n.GetClusterID(), op, batch)
 			if err2 != nil {
 				err = err2
 				h.log.Errorf("[Host %d] %s", h.id, err.Error())
 				wg.Done()
 				return
 			}
-			if len(res2.Data) < len(batch) {
-				h.log.Errorf("Incorrect batch response length: %d != %d", len(res2.Data), len(batch))
+			if len(res2) < len(batch) {
+				h.log.Errorf("Incorrect batch response length: %d != %d", len(res2), len(batch))
 				wg.Done()
 				return
 			}
 			for i, item := range batch {
-				res[item.N] = byte(res2.Data[i])
+				res[item.N] = byte(res2[i])
 			}
 			wg.Done()
 		}(nodeID, batch)
@@ -795,6 +795,9 @@ func (h *host) Close() (err error) {
 
 // Stop stops services
 func (h *host) Stop() {
+	for _, p := range h.proposers {
+		p.Stop()
+	}
 	h.svcPersistence.Stop()
 	h.svcDelegation.Stop()
 }

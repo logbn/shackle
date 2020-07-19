@@ -97,32 +97,46 @@ func (n *node) PrepareSnapshot() (res interface{}, err error) {
 	// n.log.Debugf("PrepareSnapshot")
 	return
 }
+
+// Update handles a replicated raft log
 func (n *node) Update(ents []dbsm.Entry) ([]dbsm.Entry, error) {
 	n.metricMutex.Lock()
 	defer n.metricMutex.Unlock()
 	n.updates++
 	n.batches += len(ents)
-	var batches = make([]entity.Batch, len(ents))
-	var ops = make([]uint8, len(ents))
+	var batches []entity.Batch
+	var ops []uint8
+	var counts = make([]int, len(ents))
 	var err error
 	for i, e := range ents {
 		if len(e.Cmd) == 0 {
 			continue
 		}
-		batches[i], err = entity.BatchFromBytes(e.Cmd[1:], n.keylen, n.svcHash)
+		// These batches of batches of batches are getting ridiculous.
+		multiOps, multiBatches, err := entity.MultiBatchFromBytes(e.Cmd, n.keylen, n.svcHash)
 		if err != nil {
 			n.log.Errorf(err.Error())
 		}
-		ops[i] = e.Cmd[0]
-		n.items += len(batches[i])
+		batches = append(batches, multiBatches...)
+		ops = append(ops, multiOps...)
+		for j := range multiBatches {
+			n.items += len(multiBatches[j])
+		}
+		counts[i] = len(multiOps)
 	}
 	res, err := n.svcPersistence.MultiExec(n.Partition, ops, batches)
 	if err != nil {
 		n.log.Errorf(err.Error())
 		return ents, err
 	}
-	for i := range res {
-		ents[i].Result = dbsm.Result{Data: res[i]}
+	// Coalesce results
+	var c int
+	for i, count := range counts {
+		ents[i].Result = dbsm.Result{}
+		for j := 0; j < count; j++ {
+			ents[i].Result.Data = append(ents[i].Result.Data, res[c]...)
+			c++
+		}
 	}
 	// n.log.Debugf("Update")
 	return ents, nil

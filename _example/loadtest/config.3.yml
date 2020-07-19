@@ -48,6 +48,9 @@ host:
     zone: a
   vary:
     - zone
+  batch:
+    size: 1024
+    time: 50ms
   join:
     - id: 1
       raft_addr: shackle-1:4709

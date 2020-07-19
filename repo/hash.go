@@ -1,12 +1,12 @@
 package repo
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"os"
 	"strconv"
 	"sync"
-	"bytes"
 	"time"
 
 	"github.com/benbjohnson/clock"
@@ -40,16 +40,16 @@ type Hash interface {
 }
 
 type hash struct {
-	id        uint16
+	id         uint16
 	partitions uint16
-	clock     clock.Clock
-	keyExp    time.Duration
-	lockExp   time.Duration
-	ixenv     *lmdb.Env
-	ixdbi     map[uint16]lmdb.DBI
-	ixmetadbi lmdb.DBI
-	mutex     sync.Mutex
-	cache     lru.LRUCache
+	clock      clock.Clock
+	keyExp     time.Duration
+	lockExp    time.Duration
+	ixenv      *lmdb.Env
+	ixdbi      map[uint16]lmdb.DBI
+	ixmetadbi  lmdb.DBI
+	mutex      sync.Mutex
+	cache      lru.LRUCache
 }
 
 // NewHash returns a hash respository
@@ -77,7 +77,7 @@ func NewHash(cfg *config.RepoHash, partitions, id uint16) (r Hash, err error) {
 		env.SetMapSize(int64(1 << 39))
 		env.Open(path, uint(envopt), 0777)
 		err = env.Update(func(txn *lmdb.Txn) (err error) {
-			for i := int(id); i < int(id) + 65536/int(partitions); i++ {
+			for i := int(id); i < int(id)+65536/int(partitions); i++ {
 				name := fmt.Sprintf("%04x", i)
 				dbi[uint16(i)], err = txn.OpenDBI(name, uint(dbopt|lmdb.Create))
 				if err != nil {

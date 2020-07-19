@@ -23,9 +23,6 @@ repo:
     lock_expiration: 10s
     sweep_interval: 10s
     path_ix: /data-nvme/node3
-    disks:
-      - path: /data-nvme/node3
-        capacity: 8
 
 monitor:
   prometheus:
@@ -50,6 +47,9 @@ host:
     zone: c
   vary:
     - zone
+  batch:
+    size: 1024
+    time: 50ms
   join:
     - id: 1
       raft_addr: 127.0.0.1:4709

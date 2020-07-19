@@ -44,6 +44,12 @@ type Host struct {
 	Meta         HostMeta   `yaml:"meta"`
 	Join         []HostJoin `yaml:"join"`
 	Vary         []string   `yaml:"vary"`
+	Batch        Batch      `yaml:"batch"`
+}
+
+type Batch struct {
+	Size int           `yaml:"size"`
+	Time time.Duration `yaml:"time"`
 }
 
 type Log struct {

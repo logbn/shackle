@@ -96,6 +96,26 @@ func TestBatchResponseToJson(t *testing.T) {
 	assert.Equal(t, `[]`, string(out))
 }
 
+func TestBatchToBytes(t *testing.T) {
+	h := &mockHasher{}
+	b := Batch{
+		BatchItem{0, []byte("000000000000"), 0},
+		BatchItem{1, []byte("000000000001"), 0},
+		BatchItem{2, []byte("000000000002"), 0},
+		BatchItem{3, []byte("000000000003"), 0},
+	}
+	msg := b.ToBytes(OP_LOCK)
+	assert.Len(t, msg, 1+4+(12*4))
+	batch2, err := BatchFromBytes(msg[5:], 12, h)
+	require.Nil(t, err)
+	assert.Len(t, batch2, 4)
+	ops, batches, err := MultiBatchFromBytes(append(msg, msg...), 12, h)
+	require.Nil(t, err)
+	assert.Len(t, ops, 2)
+	assert.Len(t, batches, 2)
+	assert.Len(t, batches[0], 4)
+}
+
 type mockHasher struct{}
 
 func (h *mockHasher) Hash(a, b []byte) ([]byte, uint16) {

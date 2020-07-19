@@ -1,6 +1,7 @@
 package entity
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -63,20 +64,22 @@ func (b Batch) PartitionIndexed(partitionCount int) (batches map[int]Batch) {
 }
 
 // ToBytes marshals a batch to bytes
+// op(1 byte) length(4 bytes) keys(many bytes)
 func (b Batch) ToBytes(op uint8) (res []byte) {
 	if len(b) < 1 {
 		return
 	}
 	stride := len(b[0].Hash)
-	res = make([]byte, len(b)*stride+1)
+	res = make([]byte, len(b)*stride+5)
 	res[0] = byte(op)
+	binary.BigEndian.PutUint32(res[1:5], uint32(len(b)*stride))
 	for i := 0; i < len(b); i++ {
-		copy(res[i*stride+1:(i+1)*stride+1], b[i].Hash)
+		copy(res[i*stride+5:(i+1)*stride+5], b[i].Hash)
 	}
 	return
 }
 
-// FromBytes unmarshals a batch from bytes
+// BatchFromBytes unmarshals a batch from bytes
 func BatchFromBytes(bytes []byte, stride int, h hasher) (b Batch, err error) {
 	if len(bytes) < 1 {
 		return
@@ -91,6 +94,27 @@ func BatchFromBytes(bytes []byte, stride int, h hasher) (b Batch, err error) {
 	for i := 0; i < n; i++ {
 		hash = bytes[i*stride : (i+1)*stride]
 		b[i] = BatchItem{i, hash, h.GetPartition(hash)}
+	}
+	return
+}
+
+// MultiBatchFromBytes unmarshals a collection of batches from bytes
+func MultiBatchFromBytes(msg []byte, stride int, h hasher) (ops []uint8, batches []Batch, err error) {
+	if len(msg) < 1 {
+		return
+	}
+	var batch Batch
+	var batchlen uint32
+	var cursor int
+	for i := 0; cursor < len(msg); i++ {
+		ops = append(ops, msg[cursor])
+		batchlen = binary.BigEndian.Uint32(msg[cursor+1 : cursor+5])
+		batch, err = BatchFromBytes(msg[cursor+5:cursor+5+int(batchlen)], stride, h)
+		if err != nil {
+			return
+		}
+		batches = append(batches, batch)
+		cursor = cursor + int(batchlen) + 5
 	}
 	return
 }
