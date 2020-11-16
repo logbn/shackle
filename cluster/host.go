@@ -253,7 +253,7 @@ func (h *host) isLeader() bool {
 	return h.leaderID == h.id
 }
 
-// init is idempotent. It is called upon any state change event before the host is active and executed serially.
+// init is idempotent. It is called upon any state change event before the host is active. Not concurrent.
 func (h *host) init() {
 	if h.active || !h.starting {
 		return

@@ -6,7 +6,7 @@ package event;
 
 // Tick events are emitted by the deployment leader at regular intervals.
 // This maintains a monotonic clock for all clusters in the deployment.
-// These events are intended to be propagated to all clusters in the deployment.
+// These events are intended to be propagated to all hosts in the deployment.
 message Tick {
 	uint32 epoch = 1;
 }

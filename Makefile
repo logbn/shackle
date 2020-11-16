@@ -26,7 +26,7 @@ runtest:
 
 coverage:
 	@mkdir -p _dist
-	go test ./... -coverprofile=dist/coverage.out -coverpkg=./...
+	go test ./... -coverprofile=_dist/coverage.out -coverpkg=./...
 	go tool cover -html _dist/coverage.out -o _dist/coverage.html
 	@go tool cover -func _dist/coverage.out | grep total | awk '{print $3}'
 
@@ -40,8 +40,6 @@ dev:
 	@go run $(LDFLAGS) main.go -c $(DEV_CFG)
 
 tune: guard-DISK
-	cat /sys/block/$(DISK)/queue/scheduler
-	@echo noop | sudo tee /sys/block/$(DISK)/queue/scheduler
 	cat /proc/sys/vm/dirty_expire_centisecs
 	@echo 100 | sudo tee /proc/sys/vm/dirty_expire_centisecs
 	cat /proc/sys/vm/dirty_writeback_centisecs
