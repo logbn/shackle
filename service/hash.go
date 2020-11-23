@@ -1,14 +1,12 @@
 package service
 
 import (
-	"crypto/sha1"
-	"crypto/sha256"
-	"crypto/sha512"
-	"encoding/binary"
 	"fmt"
 	"math"
 
-	"highvolume.io/shackle/config"
+	"github.com/twmb/murmur3"
+
+	"logbin.io/shackle/config"
 )
 
 type Hash interface {
@@ -24,38 +22,19 @@ type hash struct {
 // NewHash returns a hash service
 func NewHash(cfg *config.App) (r *hash, err error) {
 	var hashFunc func([]byte) []byte
-	var (
-		keylen     = cfg.Host.KeyLength
-		pepper     = cfg.Host.Pepper
-		partitions = cfg.Host.Partitions
-	)
+	var partitions = cfg.Host.Partitions
 	if partitions == 0 {
 		return nil, fmt.Errorf("At least one partition is required (got %d)", partitions)
 	}
-	if keylen <= 20 {
-		hashFunc = func(in []byte) []byte {
-			sha := sha1.Sum(append([]byte(pepper), in...))
-			return sha[:keylen]
+	p1, p2 := murmur3.Sum128([]byte(cfg.Host.Pepper))
+	hashFunc = func(in []byte) []byte {
+		h1, h2 := murmur3.SeedSum128(p1, p2, in)
+		return []byte{
+			byte(h1>>56), byte(h1>>48), byte(h1>>40), byte(h1>>32),
+			byte(h1>>24), byte(h1>>16), byte(h1>>8), byte(h1),
+			byte(h2>>56), byte(h2>>48), byte(h2>>40), byte(h2>>32),
+			byte(h2>>24), byte(h2>>16), byte(h2>>8), byte(h2),
 		}
-	} else if keylen <= 32 {
-		hashFunc = func(in []byte) []byte {
-			sha := sha256.Sum256(append([]byte(pepper), in...))
-			return sha[:keylen]
-		}
-	} else if keylen <= 64 {
-		hashFunc = func(in []byte) []byte {
-			sha := sha512.Sum512(append([]byte(pepper), in...))
-			return sha[:keylen]
-		}
-	} else {
-		return nil, fmt.Errorf("Key length too large %d (max 64)", keylen)
-	}
-	if cfg.Host.Partitions > math.MaxUint16 {
-		return nil, fmt.Errorf("Cluster partition count too large %d (max %d)", keylen, math.MaxUint16)
-	}
-	var log2pc = math.Log2(float64(partitions))
-	if math.Trunc(log2pc) != log2pc {
-		return nil, fmt.Errorf("Cluster partition count must be power of 2")
 	}
 	// Partition bitmask
 	bits := int(math.Log2(float64(partitions)))

@@ -13,6 +13,10 @@ type App struct {
 	Repo    Repo    `yaml:"repo"`
 }
 
+func (app *App) SetDefaults() {
+	app.Host.SetDefaults()
+}
+
 type Api struct {
 	Enabled bool    `yaml:"enabled"`
 	Http    ApiHttp `yaml:"http"`
@@ -45,6 +49,11 @@ type Host struct {
 	Join         []HostJoin `yaml:"join"`
 	Vary         []string   `yaml:"vary"`
 	Batch        Batch      `yaml:"batch"`
+}
+func (h *Host) SetDefaults() {
+	if h.KeyLength < 8 {
+		h.KeyLength = 16
+	}
 }
 
 type Batch struct {

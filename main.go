@@ -101,5 +101,7 @@ func loadConfig(logger log.Logger, path string) config.App {
 	if err != nil {
 		logger.Fatalf("Could not unmarshal config file %s, #%v ", *config_path, err)
 	}
+	cfg.SetDefaults()
+
 	return cfg
 }
