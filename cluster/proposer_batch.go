@@ -11,8 +11,8 @@ import (
 	dbclient "github.com/lni/dragonboat/v3/client"
 	dbsm "github.com/lni/dragonboat/v3/statemachine"
 
-	"highvolume.io/shackle/config"
-	"highvolume.io/shackle/entity"
+	"logbin.io/shackle/config"
+	"logbin.io/shackle/entity"
 )
 
 type Proposer interface {

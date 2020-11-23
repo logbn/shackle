@@ -10,10 +10,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"highvolume.io/shackle/config"
-	"highvolume.io/shackle/entity"
-	"highvolume.io/shackle/repo"
-	"highvolume.io/shackle/test/mock"
+	"logbin.io/shackle/config"
+	"logbin.io/shackle/entity"
+	"logbin.io/shackle/repo"
+	"logbin.io/shackle/test/mock"
 )
 
 func TestNewPersistence(t *testing.T) {

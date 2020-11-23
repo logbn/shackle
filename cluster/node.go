@@ -7,10 +7,10 @@ import (
 
 	dbsm "github.com/lni/dragonboat/v3/statemachine"
 
-	"highvolume.io/shackle/config"
-	"highvolume.io/shackle/entity"
-	"highvolume.io/shackle/log"
-	"highvolume.io/shackle/service"
+	"logbin.io/shackle/config"
+	"logbin.io/shackle/entity"
+	"logbin.io/shackle/log"
+	"logbin.io/shackle/service"
 )
 
 type Node interface {

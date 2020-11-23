@@ -3,8 +3,8 @@ package mockcluster
 import (
 	dbsm "github.com/lni/dragonboat/v3/statemachine"
 
-	"highvolume.io/shackle/entity"
-	"highvolume.io/shackle/service"
+	"logbin.io/shackle/entity"
+	"logbin.io/shackle/service"
 )
 
 type Host struct {

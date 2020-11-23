@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"highvolume.io/shackle/config"
+	"logbin.io/shackle/config"
 )
 
 func TestHash(t *testing.T) {

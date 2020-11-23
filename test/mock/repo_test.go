@@ -6,8 +6,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"highvolume.io/shackle/config"
-	"highvolume.io/shackle/entity"
+	"logbin.io/shackle/config"
+	"logbin.io/shackle/entity"
 )
 
 func TestRepoFactoryhash(t *testing.T) {

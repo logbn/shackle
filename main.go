@@ -13,10 +13,10 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"highvolume.io/shackle/app"
-	"highvolume.io/shackle/config"
-	"highvolume.io/shackle/log"
-	"highvolume.io/shackle/version"
+	"logbin.io/shackle/app"
+	"logbin.io/shackle/config"
+	"logbin.io/shackle/log"
+	"logbin.io/shackle/version"
 )
 
 var config_path = flag.String("c", "config.yml", "Location of config file(s)")

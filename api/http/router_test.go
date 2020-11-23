@@ -5,8 +5,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"highvolume.io/shackle/test/mock"
-	"highvolume.io/shackle/test/mock/mockcluster"
+	"logbin.io/shackle/test/mock"
+	"logbin.io/shackle/test/mock/mockcluster"
 )
 
 func TestRouter(t *testing.T) {

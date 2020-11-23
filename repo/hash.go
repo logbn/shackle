@@ -13,8 +13,8 @@ import (
 	"github.com/bmatsuo/lmdb-go/lmdb"
 	"github.com/kevburnsjr/tci-lru/lru"
 
-	"highvolume.io/shackle/config"
-	"highvolume.io/shackle/entity"
+	"logbin.io/shackle/config"
+	"logbin.io/shackle/entity"
 )
 
 var (

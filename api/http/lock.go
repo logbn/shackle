@@ -5,9 +5,9 @@ import (
 
 	"github.com/valyala/fasthttp"
 
-	"highvolume.io/shackle/cluster"
-	"highvolume.io/shackle/entity"
-	"highvolume.io/shackle/service"
+	"logbin.io/shackle/cluster"
+	"logbin.io/shackle/entity"
+	"logbin.io/shackle/service"
 )
 
 // Lock accepts lock requests via api

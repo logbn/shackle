@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"math"
+	"encoding/binary"
 
 	"github.com/twmb/murmur3"
 

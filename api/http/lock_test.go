@@ -7,9 +7,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/valyala/fasthttp"
 
-	"highvolume.io/shackle/entity"
-	"highvolume.io/shackle/test/mock"
-	"highvolume.io/shackle/test/mock/mockcluster"
+	"logbin.io/shackle/entity"
+	"logbin.io/shackle/test/mock"
+	"logbin.io/shackle/test/mock/mockcluster"
 )
 
 func TestLock(t *testing.T) {

@@ -3,9 +3,9 @@ package http
 import (
 	"github.com/fasthttp/router"
 
-	"highvolume.io/shackle/cluster"
-	"highvolume.io/shackle/log"
-	"highvolume.io/shackle/service"
+	"logbin.io/shackle/cluster"
+	"logbin.io/shackle/log"
+	"logbin.io/shackle/service"
 )
 
 // NewRouter returns a router

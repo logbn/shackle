@@ -5,7 +5,7 @@ import (
 	"strings"
 	"sync"
 
-	"highvolume.io/shackle/log"
+	"logbin.io/shackle/log"
 )
 
 // Mock Logger

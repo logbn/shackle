@@ -19,12 +19,12 @@ import (
 	dbio "github.com/lni/dragonboat/v3/raftio"
 	dbsm "github.com/lni/dragonboat/v3/statemachine"
 
-	"highvolume.io/shackle/api/grpcint"
-	"highvolume.io/shackle/config"
-	"highvolume.io/shackle/entity"
-	"highvolume.io/shackle/entity/event"
-	"highvolume.io/shackle/log"
-	"highvolume.io/shackle/service"
+	"logbin.io/shackle/api/grpcint"
+	"logbin.io/shackle/config"
+	"logbin.io/shackle/entity"
+	"logbin.io/shackle/entity/event"
+	"logbin.io/shackle/log"
+	"logbin.io/shackle/service"
 )
 
 const (

@@ -5,8 +5,8 @@ import (
 
 	"github.com/valyala/fasthttp"
 
-	"highvolume.io/shackle/entity"
-	"highvolume.io/shackle/service"
+	"logbin.io/shackle/entity"
+	"logbin.io/shackle/service"
 )
 
 func parseRequest(ctx *fasthttp.RequestCtx, svcHash service.Hash) (clientApp, clientID []byte, batch entity.Batch, err error) {

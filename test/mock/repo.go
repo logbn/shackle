@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
-	"highvolume.io/shackle/config"
-	"highvolume.io/shackle/entity"
-	"highvolume.io/shackle/repo"
+	"logbin.io/shackle/config"
+	"logbin.io/shackle/entity"
+	"logbin.io/shackle/repo"
 )
 
 func RepoFactoryhash(cfg *config.RepoHash, partitions, id uint16) (r repo.Hash, err error) {

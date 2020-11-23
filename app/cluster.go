@@ -7,13 +7,13 @@ import (
 	"github.com/valyala/fasthttp"
 	"google.golang.org/grpc"
 
-	"highvolume.io/shackle/api/grpcint"
-	"highvolume.io/shackle/api/http"
-	"highvolume.io/shackle/cluster"
-	"highvolume.io/shackle/config"
-	"highvolume.io/shackle/log"
-	"highvolume.io/shackle/repo"
-	"highvolume.io/shackle/service"
+	"logbin.io/shackle/api/grpcint"
+	"logbin.io/shackle/api/http"
+	"logbin.io/shackle/cluster"
+	"logbin.io/shackle/config"
+	"logbin.io/shackle/log"
+	"logbin.io/shackle/repo"
+	"logbin.io/shackle/service"
 )
 
 type Cluster struct {

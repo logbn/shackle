@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"highvolume.io/shackle/entity"
+	"logbin.io/shackle/entity"
 )
 
 func TestServicePersistence(t *testing.T) {

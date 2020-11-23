@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"highvolume.io/shackle/entity"
+	"logbin.io/shackle/entity"
 )
 
 // ServicePersistence
